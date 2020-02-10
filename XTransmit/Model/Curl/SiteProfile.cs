@@ -1,13 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text;
 
 namespace XTransmit.Model.Curl
 {
-    /**
-     * Updated: 2019-09-30
-     */
     [Serializable]
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
     public class SiteProfile
     {
         // site info
@@ -22,7 +22,8 @@ namespace XTransmit.Model.Curl
 
         // curl. 
         public bool IsReadResponse { get; set; }
-        public List<CurlArgument> ArgumentList { get; set; }
+        public List<CurlArgument> ArgumentList { get; private set; }
+
 
         /**<summary>
          * Return a new object with all properties to default value.
@@ -34,7 +35,7 @@ namespace XTransmit.Model.Curl
         {
             Title = "Title";
             Website = "Website";
-            TimeUpdated = DateTime.Now.ToString("yyyy.MM.dd-HH:mm:ss");
+            TimeUpdated = DateTime.Now.ToString("yyyy.MM.dd-HH:mm:ss", CultureInfo.InvariantCulture);
 
             PlayTimes = 1;
             DelayMin = 0; //no delay
@@ -44,7 +45,7 @@ namespace XTransmit.Model.Curl
             ArgumentList = new List<CurlArgument>();
         }
 
-        // copy object, use serializer
+        // copy object by serializer
         public SiteProfile Copy() => (SiteProfile)Utility.TextUtil.CopyBySerializer(this);
 
         public string GetArguments()
@@ -55,7 +56,7 @@ namespace XTransmit.Model.Curl
                 try
                 {
                     string argument = curlArgument.Argument;
-                    if (argument.StartsWith("-"))
+                    if (argument.StartsWith("-", StringComparison.Ordinal))
                     {
                         sb.Append(' ').Append(argument);
                     }
@@ -65,7 +66,7 @@ namespace XTransmit.Model.Curl
                 try
                 {
                     string value = curlArgument.Value;
-                    if (value.Length > 2)
+                    if (value.Length > 0) // such as timeout setting
                     {
                         sb.Append(' ').Append(value);
                     }
@@ -74,6 +75,24 @@ namespace XTransmit.Model.Curl
             }
 
             return sb.ToString();
+        }
+
+
+        public override int GetHashCode()
+        {
+            return (Website + Title).GetHashCode();
+        }
+
+        public override bool Equals(object obj)
+        {
+            if (obj is SiteProfile siteProfile)
+            {
+                return GetHashCode() == siteProfile.GetHashCode();
+            }
+            else
+            {
+                return false;
+            }
         }
     }
 }

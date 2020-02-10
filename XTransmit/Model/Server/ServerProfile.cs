@@ -1,20 +1,23 @@
 using System;
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Text;
+using System.Windows;
 using XTransmit.Model.IPAddress;
 using XTransmit.Utility;
 
 namespace XTransmit.Model.Server
 {
-    /**
-     * Updated: 2019-10-02
-     */
     [Serializable]
-    public class ServerProfile
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
+    public class ServerProfile : INotifyPropertyChanged
     {
-        // constants
-        public static readonly string[] Ciphers =
+        // encrypt method
+        public static List<string> Ciphers { get; } = new List<string>
         {
             "rc4-md5",
             "aes-128-gcm", "aes-192-gcm", "aes-256-gcm",
@@ -27,35 +30,159 @@ namespace XTransmit.Model.Server
             "salsa20",
         };
 
-        // values
-        public string HostIP;
-        public int HostPort;
-        public string Encrypt;
-        public string Password;
-        public string Remarks;
-
-        public bool PluginEnabled;
-        public string PluginName;
-        public string PluginOption;
-
-        // preference and info
-        public string FriendlyName;
-        public string TimeCreated;
-        public int Timeout;
-        public IPInfo IPData;
-
-        // status
-        public string ResponseTime;
-        public long Ping; // less then 0 means timeout or unreachable
-        public int ListenPort;
-
-        public ServerProfile Copy()
+        /** server arguments
+         */
+        public string HostIP
         {
-            return (ServerProfile)TextUtil.CopyBySerializer(this);
+            get => hostIp;
+            set
+            {
+                hostIp = value;
+                OnPropertyChanged(nameof(HostIP));
+            }
         }
 
+        public int HostPort
+        {
+            get => hostPort;
+            set
+            {
+                hostPort = value;
+                OnPropertyChanged(nameof(HostPort));
+            }
+        }
+
+        public string Encrypt
+        {
+            get => encrypt;
+            set
+            {
+                encrypt = value;
+                OnPropertyChanged(nameof(Encrypt));
+            }
+        }
+
+        public string Password
+        {
+            get => password;
+            set
+            {
+                password = value;
+                OnPropertyChanged(nameof(Password));
+            }
+        }
+
+        public string Remarks
+        {
+            get => remarks;
+            set
+            {
+                remarks = value;
+                OnPropertyChanged(nameof(Remarks));
+            }
+        }
+
+        public bool PluginEnabled
+        {
+            get => pluginEnabled;
+            set
+            {
+                pluginEnabled = value;
+                OnPropertyChanged(nameof(PluginEnabled));
+            }
+        }
+
+        public string PluginName
+        {
+            get => pluginName;
+            set
+            {
+                pluginName = value;
+                OnPropertyChanged(nameof(PluginName));
+            }
+        }
+        public string PluginOption
+        {
+            get => pluginOption;
+            set
+            {
+                pluginOption = value;
+                OnPropertyChanged(nameof(PluginOption));
+            }
+        }
+
+        /** preference and info
+         */
+        public string FriendlyName
+        {
+            get => friendlyName;
+            set
+            {
+                friendlyName = value;
+                OnPropertyChanged(nameof(FriendlyName));
+            }
+        }
+
+        // deserializer need to set this property
+        public string TimeCreated { get; set; }
+
+        public IPInfo IPData { get; set; }
+
+        /** status
+         */
+        public int ListenPort
+        {
+            get => listenPort;
+            set
+            {
+                listenPort = value;
+                OnPropertyChanged(nameof(ListenPort));
+            }
+        }
+
+        public string ResponseTime
+        {
+            get => responseTime;
+            set
+            {
+                responseTime = value;
+                OnPropertyChanged(nameof(ResponseTime));
+            }
+        }
+
+        //seconds, less then 0 means timeout or unreachable
+        public long Ping
+        {
+            get => ping;
+            set
+            {
+                ping = value;
+                OnPropertyChanged(nameof(Ping));
+            }
+        }
+
+        // values 
+        private string hostIp;
+        private int hostPort;
+        private string encrypt;
+        private string password;
+        private string remarks;
+
+        private bool pluginEnabled;
+        private string pluginName;
+        private string pluginOption;
+
+        private string friendlyName;
+
+        private int listenPort;
+        private string responseTime;
+        private long ping;
+
+        private static readonly string sr_timedout = (string)Application.Current.FindResource("timed_out");
+        private static readonly string sr_failed = (string)Application.Current.FindResource("_failed");
+
         /**<summary>
-         * Must be called after the App.GlobalConfig has been loaded
+         * Must be called after the ConfigManager.Global loaded
          * </summary> 
          */
         public ServerProfile()
@@ -71,14 +198,104 @@ namespace XTransmit.Model.Server
             PluginOption = "";
 
             FriendlyName = "";
-            TimeCreated = DateTime.Now.ToString("yyyy-MM-dd hh:mm:ss");
-            // App.GlobalConfig is null when deserialize the RemoteServer object in the Config
-            Timeout = App.GlobalConfig?.SSTimeout ?? 3; 
+            TimeCreated = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
             IPData = null;
 
+            ListenPort = -1;
             ResponseTime = "";
             Ping = 0;
-            ListenPort = -1;
+        }
+
+        public string GetID()
+        {
+            return $"{hostIp}:{hostPort}";
+        }
+
+        public ServerProfile Copy()
+        {
+            return (ServerProfile)TextUtil.CopyBySerializer(this);
+        }
+
+        public bool IsServerEqual(ServerProfile serverNew)
+        {
+            if (serverNew != null)
+            {
+                return HostIP == serverNew.HostIP && HostPort == serverNew.HostPort;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        public void UpdateIPInfo(bool force)
+        {
+            if (IPData == null || force)
+            {
+                IPData = IPInfo.Fetch(HostIP);
+                SetFriendNameByIPData();
+            }
+        }
+
+        // return seconds
+        public void UpdateResponseTime()
+        {
+            if (ListenPort <= 0)
+            {
+                return;
+            }
+
+            // curl process
+            Process process = null;
+            int timeout = ConfigManager.Global.SSTimeout;
+            try
+            {
+                // UA is "curl"
+                process = Process.Start(
+                    new ProcessStartInfo
+                    {
+                        FileName = CurlManager.CurlExePath,
+                        Arguments = $"--silent --connect-timeout {timeout} --proxy \"socks5://127.0.0.1:{ListenPort}\""
+                                    + " -w \"%{time_total}\" -o NUL -s \"https://google.com\"",
+                        WorkingDirectory = App.DirectoryCurl,
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                    });
+
+                ResponseTime = process.StandardOutput.ReadToEnd();
+                double time = double.Parse(ResponseTime, CultureInfo.InvariantCulture);
+                if (time > timeout)
+                {
+                    ResponseTime = sr_timedout;
+                }
+
+                process.WaitForExit();
+            }
+            catch
+            {
+                ResponseTime = sr_failed;
+            }
+            finally
+            {
+                process?.Dispose();
+            }
+        }
+
+        public void UpdatePing()
+        {
+            using (Ping pingSender = new Ping())
+            {
+                try
+                {
+                    PingReply reply = pingSender.Send(HostIP, ConfigManager.Global.PingTimeout);
+                    Ping = (reply.Status == IPStatus.Success) ? reply.RoundtripTime : -1;
+                }
+                catch
+                {
+                    Ping = -1;
+                }
+            }
         }
 
         public void SetFriendlyNameDefault()
@@ -95,99 +312,40 @@ namespace XTransmit.Model.Server
 
             StringBuilder stringBuilder = new StringBuilder();
 
-            if (!string.IsNullOrWhiteSpace(IPData.country))
-                stringBuilder.Append(IPData.country);
+            if (!string.IsNullOrWhiteSpace(IPData.Country))
+            {
+                stringBuilder.Append(IPData.Country);
+            }
 
-            if (!string.IsNullOrWhiteSpace(IPData.region))
-                stringBuilder.Append(" - " + IPData.region);
+            if (!string.IsNullOrWhiteSpace(IPData.Region))
+            {
+                stringBuilder.Append(" - " + IPData.Region);
+            }
 
-            if (!string.IsNullOrWhiteSpace(IPData.city))
-                stringBuilder.Append(" - " + IPData.city);
+            if (!string.IsNullOrWhiteSpace(IPData.City))
+            {
+                stringBuilder.Append(" - " + IPData.City);
+            }
 
             string friendlyName = stringBuilder.ToString();
             if (!string.IsNullOrWhiteSpace(friendlyName))
             {
-                if (friendlyName.StartsWith(" - "))
+                if (friendlyName.StartsWith(" - ", StringComparison.Ordinal))
+                {
                     friendlyName = friendlyName.Substring(3);
+                }
 
                 FriendlyName = friendlyName;
             }
         }
 
-        public void FetchIPData(bool focus)
-        {
-            if (IPData == null || focus)
-            {
-                IPData = IPInfo.Fetch(HostIP);
-            }
-        }
 
-        // TODO - UA.
-        // return seconds
-        public void FetchResponseTime()
-        {
-            if (ListenPort <= 0)
-            {
-                return;
-            }
-
-            // curl process
-            int timeout = App.GlobalConfig.ResponseConnTimeout;
-            Process process = null;
-            try
-            {
-                process = Process.Start(
-                    new ProcessStartInfo
-                    {
-                        FileName = CurlManager.CurlExePath,
-                        Arguments = $"--silent --connect-timeout {timeout} --proxy \"socks5://127.0.0.1:{ListenPort}\" " + "-w \"%{time_total}\" -o NUL -s \"https://google.com\"",
-                        WorkingDirectory = App.PathCurl,
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                    });
-
-                ResponseTime = process.StandardOutput.ReadToEnd();
-                process.WaitForExit();
-            }
-            catch
-            {
-                ResponseTime = "N.A";
-            }
-            finally
-            {
-                process?.Dispose();
-            }
-        }
-
-        // OO Programming
-        public void FetchPingData(Ping ping)
-        {
-            try
-            {
-                PingReply reply = ping.Send(HostIP, 5000);
-                Ping = (reply.Status == IPStatus.Success) ? reply.RoundtripTime : -1;
-            }
-            catch (Exception)
-            {
-                Ping = -1;
-            }
-        }
-
-        /** Serializable ==================================================
+        /** INotifyPropertyChanged =========================================
          */
-        public override int GetHashCode() => HostIP.GetHashCode() ^ HostPort;
-
-        public override bool Equals(object serverNew)
+        public event PropertyChangedEventHandler PropertyChanged;
+        protected void OnPropertyChanged(string propertyName)
         {
-            if (serverNew is ServerProfile server)
-            {
-                return HostIP == server.HostIP && HostPort == server.HostPort;
-            }
-            else
-            {
-                return false;
-            }
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
 }

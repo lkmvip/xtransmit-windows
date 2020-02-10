@@ -1,36 +1,33 @@
-﻿using System.ComponentModel;
+﻿using System;
+using System.ComponentModel;
 using System.Windows;
 using XTransmit.Model;
 using XTransmit.Model.Server;
 using XTransmit.ViewModel;
-using XTransmit.ViewModel.Model;
 
 namespace XTransmit.View
 {
-    /** 
-     * Updated: 2019-08-06
-     */
     public partial class DialogServerConfig : Window
     {
-        public DialogServerConfig(ServerProfile serverProfile)
+        public DialogServerConfig(ServerProfile serverProfile, Action<bool> actionComplete)
         {
             InitializeComponent();
 
-            Preference preference = App.GlobalPreference;
-            Left = preference.WindowServerConfig.X;
-            Top = preference.WindowServerConfig.Y;
+            Preference global = PreferenceManager.Global;
+            Left = global.WindowServerConfig.X;
+            Top = global.WindowServerConfig.Y;
 
             // set viewmodel
-            DataContext = new ServerConfigVModel(new ServerView(serverProfile));
+            DataContext = new ServerConfigVModel(serverProfile, actionComplete);
             Closing += Window_Closing;
         }
 
         private void Window_Closing(object sender, CancelEventArgs e)
         {
-            // Save window placement
-            Preference preference = App.GlobalPreference;
-            preference.WindowServerConfig.X = Left;
-            preference.WindowServerConfig.Y = Top;
+            // save window placement
+            Preference global = PreferenceManager.Global;
+            global.WindowServerConfig.X = Left;
+            global.WindowServerConfig.Y = Top;
         }
     }
 }

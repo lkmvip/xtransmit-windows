@@ -1,57 +1,72 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using XTransmit.Model.UserAgent;
 
 namespace XTransmit.ViewModel
 {
-    /** 
-     * Updated: 2019-09-28
-     */
     class UserAgentVModel : BaseViewModel
     {
-        public List<UAProfile> UserAgentList { get; private set; }
+        public ObservableCollection<UAProfile> UserAgentListOC { get; private set; }
 
-        private string v_search;
+        [SuppressMessage("Globalization", "CA1304:Specify CultureInfo", Justification = "<Pending>")]
         public string Search
         {
-            get { return v_search; }
+            get { return searchValue; }
             set
             {
-                v_search = value;
-                if (string.IsNullOrWhiteSpace(v_search))
+                searchValue = value;
+                if (string.IsNullOrWhiteSpace(searchValue))
                 {
-                    UserAgentList = UAManager.UAList;
+                    UserAgentListOC = new ObservableCollection<UAProfile>(UAManager.UAList);
                 }
                 else
                 {
-                    UserAgentList = UAManager.UAList.FindAll(ua =>
-                    {
-                        return ua.Value.ToLower().Contains(value.ToLower());
-                    });
+                    List<UAProfile> uaList = UAManager.UAList.FindAll(ua => ua.Value.ToLower().Contains(value.ToLower()));
+                    UserAgentListOC = new ObservableCollection<UAProfile>(uaList);
                 }
                 OnPropertyChanged("UserAgentList");
             }
         }
+        private string searchValue;
 
         public UserAgentVModel()
         {
-            UserAgentList = UAManager.UAList;
+            UserAgentListOC = new ObservableCollection<UAProfile>(UAManager.UAList);
         }
 
         public void OnWindowClosing()
         {
             // save user-agent data if it has changes, when this window is closing
-            if (UAManager.HasChangesToFile())
+            List<UAProfile> uaList = new List<UAProfile>(UserAgentListOC);
+            if (UAManager.HasChangesToFile(uaList))
             {
                 string title = (string)Application.Current.FindResource("ua_title");
                 string ask_save = (string)Application.Current.FindResource("ua_ask_save_changes");
+                string sr_yes = (string)Application.Current.FindResource("_yes");
+                string sr_no = (string)Application.Current.FindResource("_no");
 
-                View.DialogAction dialog = new View.DialogAction(title, ask_save);
+                bool save = false;
+                Dictionary<string, Action> actions = new Dictionary<string, Action>
+                {
+                    {
+                        sr_yes,
+                        () => { save = true; }
+                    },
+
+                    {
+                        sr_no,
+                        () => { save = false; }
+                    },
+                };
+                View.DialogAction dialog = new View.DialogAction(title, ask_save, actions);
                 dialog.ShowDialog();
 
-                if (dialog.CancelableResult == true)
+                if (save)
                 {
-                    UAManager.Save();
+                    UAManager.Save(uaList);
                 }
                 else
                 {
@@ -66,7 +81,11 @@ namespace XTransmit.ViewModel
         public RelayCommand CommandSaveData => new RelayCommand(SaveData);
         private void SaveData(object parameter)
         {
-            UAManager.Save();
+            List<UAProfile> uaList = new List<UAProfile>(UserAgentListOC);
+            if (UAManager.HasChangesToFile(uaList))
+            {
+                UAManager.Save(uaList);
+            }
         }
 
         // reload data from file
@@ -74,7 +93,7 @@ namespace XTransmit.ViewModel
         private void ReloadData(object parameter)
         {
             UAManager.Reload();
-            UserAgentList = UAManager.UAList;
+            UserAgentListOC = new ObservableCollection<UAProfile>(UAManager.UAList);
             OnPropertyChanged("UserAgentList");
         }
     }

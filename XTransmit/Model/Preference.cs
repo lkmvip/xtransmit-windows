@@ -1,34 +1,43 @@
 ﻿using System;
 using System.Windows;
 using XTransmit.Utility;
-using XTransmit.ViewModel.Control;
+using XTransmit.ViewModel.Element;
 
 namespace XTransmit.Model
 {
     /**<summary>
-     * UI Preference, Such as window position and size.
-     * Updated: 2019-10-02
+     * UI Preference, Such as window position, window size, tab status.
      * </summary>
      */
     [Serializable]
     public class Preference
     {
-        public string ContentDisplay;
+        public bool IsDarkTheme { get; set; }
+        public bool IsWindowHomeVisible { get; set; }
 
-        public Placement WindowHome;
-        public Placement WindowSetting;
-        public Placement WindowAbout;
-        public Placement WindowServerConfig;
+        public string HomeContentDisplay { get; set; }
+        public string NetworkAdapter { get; set; }
 
-        public Placement WindowCurl;
-        public Placement WindowCurlRunner;
-        public Placement WindowIPAddress;
-        public Placement WindowUserAgent;
+        public Placement WindowHome { get; set; }
+        public Placement WindowSetting { get; set; }
+        public Placement WindowAbout { get; set; }
+        public Placement WindowServerConfig { get; set; }
+
+        public Placement WindowCurl { get; set; }
+        public Placement WindowCurlRunner { get; set; }
+        public Placement WindowIPAddress { get; set; }
+        public Placement WindowUserAgent { get; set; }
 
         /** construct to default values.
          */
         public Preference()
         {
+            IsDarkTheme = true;
+            IsWindowHomeVisible = true;
+
+            HomeContentDisplay = null;
+            NetworkAdapter = null;
+
             double sw = SystemParameters.PrimaryScreenWidth;
             double sh = SystemParameters.PrimaryScreenHeight;
 
@@ -44,7 +53,7 @@ namespace XTransmit.Model
             {
                 X = sw * 0.2,
                 Y = sh * 0.2,
-                W = 0, // SiteToContent
+                W = 0, // SizeToContent
                 H = 0,
             };
 
@@ -60,7 +69,7 @@ namespace XTransmit.Model
             {
                 X = sw * 0.2,
                 Y = sh * 0.2,
-                W = 0, // SiteToContent
+                W = 0, // SizeToContent
                 H = 0,
             };
 
@@ -95,31 +104,33 @@ namespace XTransmit.Model
                 W = sw * 0.6,
                 H = sh * 0.6,
             };
-
-            ContentDisplay = "";
         }
+    }
 
+    internal static class PreferenceManager
+    {
+        public static Preference Global;
 
         /**<summary>
          * Object is constructed by serializer with default values,
          * property (which also specified in the XML) value will be overwritten from the XML
          * </summary>
          */
-        public static Preference LoadFileOrDefault(string pathPrefXml)
+        public static void LoadFileOrDefault(string pathPrefXml)
         {
             if (FileUtil.XmlDeserialize(pathPrefXml, typeof(Preference)) is Preference preference)
             {
-                return preference;
+                Global = preference;
             }
             else
             {
-                return new Preference();
+                Global = new Preference();
             }
         }
 
-        public static void WriteFile(string pathPrefXml, Preference preference)
+        public static void WriteFile(string pathPrefXml)
         {
-            FileUtil.XmlSerialize(pathPrefXml, preference);
+            FileUtil.XmlSerialize(pathPrefXml, Global);
         }
     }
 }

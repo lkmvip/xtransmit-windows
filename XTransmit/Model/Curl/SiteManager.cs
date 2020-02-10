@@ -4,12 +4,9 @@ using XTransmit.Utility;
 
 namespace XTransmit.Model.Curl
 {
-    /**
-     * Updated: 2019-09-28
-     */
-    public class SiteManager
+    internal static class SiteManager
     {
-        public static List<SiteProfile> SiteList;
+        public static List<SiteProfile> SiteList { get; private set; }
         private static string CurlXmlPath;
 
         // see also Preference.LoadFileOrDefault()
@@ -39,7 +36,7 @@ namespace XTransmit.Model.Curl
             FileUtil.XmlSerialize(CurlXmlPath, listSite);
         }
 
-        // determin wether the ip list has been changed
+        // determin wether the site list has been changed
         public static bool HasChangesToFile()
         {
             byte[] md5Data = TextUtil.GetMD5(SiteList);

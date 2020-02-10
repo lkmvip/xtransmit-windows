@@ -5,20 +5,19 @@ using XTransmit.ViewModel;
 
 namespace XTransmit.View
 {
-    /**
-     * Updated: 2019-08-06
-     */
     public partial class WindowHome : Window
     {
         public WindowHome()
         {
             InitializeComponent();
 
-            Preference preference = App.GlobalPreference;
+            Preference preference = PreferenceManager.Global;
             Left = preference.WindowHome.X;
             Top = preference.WindowHome.Y;
             Width = preference.WindowHome.W;
             Height = preference.WindowHome.H;
+
+            Visibility = preference.IsWindowHomeVisible ? Visibility.Visible : Visibility.Hidden;
 
             DataContext = new HomeVModel();
             Closing += Window_Closing;
@@ -26,6 +25,7 @@ namespace XTransmit.View
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            // hide but not exit
             if (IsVisible)
             {
                 e.Cancel = true;
@@ -33,8 +33,12 @@ namespace XTransmit.View
                 return;
             }
 
-            // Save window placement
-            Preference preference = App.GlobalPreference;
+            // save preference
+            HomeVModel viewModel = (HomeVModel)DataContext;
+            Preference preference = PreferenceManager.Global;
+            preference.HomeContentDisplay = viewModel.GetCurrentContent();
+
+            // window placement
             preference.WindowHome.X = Left;
             preference.WindowHome.Y = Top;
             preference.WindowHome.W = Width;
@@ -47,7 +51,7 @@ namespace XTransmit.View
             var messageQueue = xSnackbarNotify.MessageQueue;
 
             // the message queue can be called from any thread
-            Task.Factory.StartNew(() => messageQueue.Enqueue(message));
+            Task.Run(() => messageQueue.Enqueue(message));
         }
     }
 }

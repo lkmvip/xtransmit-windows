@@ -1,6 +1,8 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Windows;
 using XTransmit.Model.IPAddress;
 using XTransmit.Model.Server;
@@ -9,13 +11,11 @@ using XTransmit.Utility;
 
 namespace XTransmit.Model.Curl
 {
-    /**
-     * Updated: 2019-09-30
-     */
-    public class SiteWorker
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
+    internal class SiteWorker : IDisposable
     {
-        public Action<bool> OnStateUpdated = null;
-        public Action<CurlResponse> OnResponse = null;
+        private readonly Action<bool> actionStateUpdated;
+        private readonly Action<CurlResponse> actionResponse;
 
         private BackgroundWorker bgWork = null;
         private static readonly Random random = new Random();
@@ -26,10 +26,24 @@ namespace XTransmit.Model.Curl
         private static readonly string sr_complete = (string)Application.Current.FindResource("_complete");
         private static readonly string sr_failed = (string)Application.Current.FindResource("_failed");
 
-        public SiteWorker(Action<bool> OnStateUpdated, Action<CurlResponse> OnResponse)
+        public SiteWorker(Action<bool> actionStateUpdated, Action<CurlResponse> actionResponse)
         {
-            this.OnStateUpdated = OnStateUpdated;
-            this.OnResponse = OnResponse;
+            this.actionStateUpdated = actionStateUpdated;
+            this.actionResponse = actionResponse;
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                StopBgWork();
+            }
         }
 
         public void StartBgWork(SiteProfile profile)
@@ -50,10 +64,14 @@ namespace XTransmit.Model.Curl
         public void StopBgWork()
         {
             if (bgWork == null)
+            {
                 return;
+            }
 
             if (bgWork.IsBusy)
+            {
                 bgWork.CancelAsync();
+            }
 
             bgWork.DoWork -= BWDoWork;
             bgWork.ProgressChanged -= BWProgressChanged;
@@ -67,7 +85,7 @@ namespace XTransmit.Model.Curl
             // fake client
             if (fakeClient != null)
             {
-                ServerProfile server = SSManager.GerRendom();
+                ServerProfile server = ServerManager.GerRendom();
                 if (server != null)
                 {
                     arguments = arguments.Replace(fakeClient.Replace, $"socks5://127.0.0.1:{server.ListenPort}");
@@ -125,12 +143,12 @@ namespace XTransmit.Model.Curl
                     {
                         FileName = CurlManager.CurlExePath,
                         Arguments = arguments,
-                        WorkingDirectory = App.PathCurl,
+                        WorkingDirectory = App.DirectoryCurl,
                         CreateNoWindow = true,
                         UseShellExecute = false,
                         RedirectStandardOutput = readReponse,
                     });
-
+                Debug.WriteLine(arguments);
                 response = process.StartInfo.RedirectStandardOutput ? process.StandardOutput.ReadToEnd() : sr_complete;
                 process.WaitForExit();
             }
@@ -155,15 +173,14 @@ namespace XTransmit.Model.Curl
             FakeIP fakeip = FakeIP.From(arguments); // fake ip
             FakeUA fakeua = FakeUA.From(arguments); // fake ua
 
-            // report begin state
+            // less than 0 means begin
             bgWork.ReportProgress(-1, null);
 
             for (int i = 1; i <= profile.PlayTimes; i++)
             {
-                /** Report progress, states. 
-                 * progress is indicated in e.UserState
+                /** Report progress, states. e.UserState is progress value
                  */
-                string time = DateTime.Now.ToString("yyyy.MM.dd-HH:mm:ss");
+                string time = DateTime.Now.ToString("yyyy.MM.dd-HH:mm:ss", CultureInfo.InvariantCulture);
                 try
                 {
                     string response = PlaySite(arguments, fakeClient, fakeip, fakeua, profile.IsReadResponse);
@@ -217,19 +234,19 @@ namespace XTransmit.Model.Curl
                 string time = (string)state[1];
                 string response = (string)state[2];
 
-                OnResponse?.Invoke(new CurlResponse(index, time, response));
+                actionResponse?.Invoke(new CurlResponse(index, time, response));
             }
             else
             {
                 // state: running
-                OnStateUpdated?.Invoke(true);
+                actionStateUpdated?.Invoke(true);
             }
         }
 
         private void BWCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
             // state: not running
-            OnStateUpdated?.Invoke(false);
+            actionStateUpdated?.Invoke(false);
         }
     }
 }

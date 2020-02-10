@@ -1,6 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Web;
@@ -8,13 +12,15 @@ using XTransmit.Utility;
 
 namespace XTransmit.Model.Server
 {
-    /**
-     * Updated: 2019-09-24
-     */
-    public static class ServerManager
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
+    internal static class ServerManager
     {
-        public static List<ServerProfile> ServerList;
+        public static readonly Dictionary<ServerProfile, Process> ServerProcessMap = new Dictionary<ServerProfile, Process>();
+        public static List<ServerProfile> ServerList { get; private set; }
+
         private static string ServerXmlPath;
+        private static readonly Random RandGen = new Random();
+        private static readonly object locker = new object();
 
         // Init server list by deserialize xml file
         public static void Load(string pathServerXml)
@@ -34,13 +40,66 @@ namespace XTransmit.Model.Server
         public static void Save(List<ServerProfile> listServerProfile)
         {
             FileUtil.XmlSerialize(ServerXmlPath, listServerProfile);
+            ServerList = listServerProfile;
         }
 
+        // TODO - Server type (SS, V2Ray ...)
+        public static bool Start(ServerProfile server, int listen)
+        {
+            if (ServerProcessMap.ContainsKey(server))
+            {
+                return true;
+            }
+
+            if (SSManager.Execute(server, listen) is Process process)
+            {
+                server.ListenPort = listen;
+                ServerProcessMap.Add(server, process);
+                return true;
+            }
+
+            return false;
+        }
+
+        public static void Stop(ServerProfile server)
+        {
+            // server is null at the first time running
+            if (server != null && ServerProcessMap.ContainsKey(server))
+            {
+                Process process = ServerProcessMap[server];
+                SSManager.Exit(process);
+
+                server.ListenPort = -1;
+                ServerProcessMap.Remove(server);
+            }
+        }
+
+        // Server Pool 
+        public static ServerProfile GerRendom()
+        {
+            lock (locker)
+            {
+                if (ServerProcessMap.Count > 1)
+                {
+                    int index = RandGen.Next(0, ServerProcessMap.Count - 1);
+                    return ServerProcessMap.Keys.ElementAt(index);
+                }
+                else if (ServerProcessMap.Count > 0)
+                {
+                    return ServerProcessMap.Keys.ElementAt(0);
+                }
+                else
+                {
+                    return null;
+                }
+            }
+        }
 
         /** Import ---------------------------------------------------------------------------------------
          * start with "ss://". 
          * Reference code: github.com/shadowsocks/shadowsocks-windows/raw/master/shadowsocks-csharp/Model/Server.cs
          */
+        [SuppressMessage("Design", "CA1054:Uri parameters should not be strings", Justification = "<Pending>")]
         public static ServerProfile ParseLegacyServer(string ssUrl)
         {
             var match = UrlFinder.Match(ssUrl);
@@ -57,13 +116,14 @@ namespace XTransmit.Model.Server
                 serverProfile.Remarks = HttpUtility.UrlDecode(tag, Encoding.UTF8);
             }
 
-            Match details = null;
+            Match details;
             try
             {
                 details = DetailsParser.Match(
-                    Encoding.UTF8.GetString(Convert.FromBase64String(base64.PadRight(base64.Length + (4 - base64.Length % 4) % 4, '='))));
+                    Encoding.UTF8.GetString(
+                        Convert.FromBase64String(base64.PadRight(base64.Length + (4 - (base64.Length % 4)) % 4, '='))));
             }
-            catch (FormatException)
+            catch
             {
                 return null;
             }
@@ -73,10 +133,18 @@ namespace XTransmit.Model.Server
                 return null;
             }
 
+            try
+            {
+                serverProfile.HostPort = int.Parse(details.Groups["port"].Value, CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                return null;
+            }
+
             serverProfile.Encrypt = details.Groups["method"].Value;
             serverProfile.Password = details.Groups["password"].Value;
             serverProfile.HostIP = details.Groups["hostname"].Value;
-            serverProfile.HostPort = int.Parse(details.Groups["port"].Value);
 
             serverProfile.SetFriendlyNameDefault();
             return serverProfile;
@@ -85,7 +153,7 @@ namespace XTransmit.Model.Server
         /**<summary>
          * The "serverInfo" will be splited by "\r\n", "\r", "\n", " "
          * </summary>
-         * <returns>Return count added</returns>
+         * <returns>Return number of server added</returns>
          */
         public static List<ServerProfile> ImportServers(string serverInfos)
         {
@@ -133,7 +201,7 @@ namespace XTransmit.Model.Server
                         userInfo = Encoding.UTF8.GetString(
                             Convert.FromBase64String(base64.PadRight(base64.Length + (4 - base64.Length % 4) % 4, '=')));
                     }
-                    catch (FormatException)
+                    catch
                     {
                         continue;
                     }

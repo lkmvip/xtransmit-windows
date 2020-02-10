@@ -1,9 +1,7 @@
-﻿using System;
-using System.Diagnostics;
+﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 
-/**
- * Updated: 2019-09-30
- */
 namespace XTransmit.Utility
 {
     /** Notes:
@@ -14,17 +12,21 @@ namespace XTransmit.Utility
         file named 'config' in the current directory (except Win32 which will look for
         'config.txt'). If no config_file is found, Privoxy will fail to start.
      */
-
-    public static class PrivoxyManager
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
+    internal static class PrivoxyManager
     {
-        public static readonly string PathPrivoxyExe = $@"{App.PathPrivoxy}\{privoxy_exe_name}";
+        public static readonly string PathPrivoxyExe = $@"{App.DirectoryPrivoxy}\{privoxy_exe_name}";
         private static Process process_privoxy = null;
 
-        private const string privoxy_exe_name = "privoxy.exe";
-        private const string privoxy_exe_process = "privoxy";
-        private const string privoxy_exe_md5 = "bc77d427634503f3ee7603bf009d7e32";
+        /** privoxy-windows 3.0.28
+         */
+        private const string privoxy_exe_name = "xt-privoxy.exe";
+        private const string privoxy_exe_process = "xt-privoxy";
+        private const string privoxy_exe_md5 = "3CF46F77B0917F08374E23EE59F7187F";
 
         private const string privoxy_config_txt_name = "privoxy-config.txt";
+        private const string config_port_listen = "PORT-LISTEN";
+        private const string config_port_forward_socks5 = "PORT-FORWARD-SOCKS5";
 
         public static void KillRunning()
         {
@@ -44,7 +46,7 @@ namespace XTransmit.Utility
                             process.WaitForExit();
                         }
                     }
-                    catch (Exception) { }
+                    catch { }
 
                     process.Dispose();
                 }
@@ -53,11 +55,17 @@ namespace XTransmit.Utility
 
         public static bool Prepare()
         {
-            // Creates all directories and subdirectories
-            try { System.IO.Directory.CreateDirectory(App.PathPrivoxy); }
-            catch (Exception) { return false; }
+            // create directories and sub directories
+            try
+            {
+                System.IO.Directory.CreateDirectory(App.DirectoryPrivoxy);
+            }
+            catch
+            {
+                return false;
+            }
 
-            // Check binary files
+            // check files
             if (!FileUtil.CheckMD5(PathPrivoxyExe, privoxy_exe_md5))
             {
                 if (!FileUtil.UncompressGZ(PathPrivoxyExe, Properties.Resources.privoxy_exe_gz))
@@ -71,11 +79,13 @@ namespace XTransmit.Utility
 
         public static bool Start(int portPrivoxy, int portShadowsocks)
         {
-            string config = Properties.Resources.privoxy_config_txt;
-            config = config.Replace("PORT_PRIVOXY", portPrivoxy.ToString());
-            config = config.Replace("PORT_SSLOCAL", portShadowsocks.ToString());
+            string config_path = $@"{App.DirectoryPrivoxy}\{privoxy_config_txt_name}";
+            string config_text = Properties.Resources.privoxy_config_txt;
 
-            if (!FileUtil.WriteUTF8($@"{App.PathPrivoxy}\{privoxy_config_txt_name}", config))
+            config_text = config_text.Replace(config_port_listen, portPrivoxy.ToString(CultureInfo.InvariantCulture));
+            config_text = config_text.Replace(config_port_forward_socks5, portShadowsocks.ToString(CultureInfo.InvariantCulture));
+
+            if (!FileUtil.WriteUTF8(config_path, config_text))
             {
                 return false;
             }
@@ -87,12 +97,12 @@ namespace XTransmit.Utility
                     new ProcessStartInfo
                     {
                         FileName = PathPrivoxyExe,
-                        Arguments = $@"{App.PathPrivoxy}\{privoxy_config_txt_name}",
-                        WorkingDirectory = App.PathPrivoxy,
-                        UseShellExecute = true,
+                        Arguments = config_path,
+                        WorkingDirectory = App.DirectoryPrivoxy,
+                        UseShellExecute = false,
                         CreateNoWindow = true,
-                        LoadUserProfile = false,
-                        WindowStyle = ProcessWindowStyle.Hidden,
+                        //LoadUserProfile = false,
+                        //WindowStyle = ProcessWindowStyle.Hidden,
                     });
             }
             catch
@@ -112,13 +122,13 @@ namespace XTransmit.Utility
 
             try
             {
-                process_privoxy.CloseMainWindow();
+                //process_privoxy.CloseMainWindow();
                 process_privoxy.Kill();
                 process_privoxy.WaitForExit();
             }
-            catch (Exception) { }
+            catch { }
 
-            //The Dispose method calls Close
+            // it calls the Close method
             process_privoxy.Dispose();
         }
     }

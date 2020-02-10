@@ -5,14 +5,13 @@ using XTransmit.Utility;
 
 namespace XTransmit.Model.UserAgent
 {
-    /**
-     * Updated: 2019-09-28
-     */
-    public static class UAManager
+    internal static class UAManager
     {
-        public static List<UAProfile> UAList;
+        public static List<UAProfile> UAList { get; private set; }
         private static string UAXmlPath;
+
         private static readonly Random RandGen = new Random();
+        private static readonly object locker = new object();
 
         // Init ua data by deserialize xml file
         public static void Load(string pathUaXml)
@@ -36,14 +35,10 @@ namespace XTransmit.Model.UserAgent
             }
         }
 
-        public static void Save(string pathUaXml = null)
+        public static void Save(List<UAProfile> uaList)
         {
-            if (string.IsNullOrWhiteSpace(pathUaXml))
-            {
-                pathUaXml = UAXmlPath;
-            }
-
-            FileUtil.XmlSerialize(pathUaXml, UAList);
+            FileUtil.XmlSerialize(UAXmlPath, uaList);
+            UAList = uaList;
         }
 
         // determin wether the ip list has been changed
@@ -62,14 +57,17 @@ namespace XTransmit.Model.UserAgent
 
         public static UAProfile GetRandom()
         {
-            if (UAList != null && UAList.Count > 0)
+            lock (locker)
             {
-                int i = RandGen.Next(0, UAList.Count - 1);
-                return UAList[i];
-            }
-            else
-            {
-                return null;
+                if (UAList != null && UAList.Count > 0)
+                {
+                    int i = RandGen.Next(0, UAList.Count - 1);
+                    return UAList[i];
+                }
+                else
+                {
+                    return null;
+                }
             }
         }
     }

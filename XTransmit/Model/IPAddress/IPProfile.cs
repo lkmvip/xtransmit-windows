@@ -3,9 +3,6 @@ using System.ComponentModel;
 
 namespace XTransmit.Model.IPAddress
 {
-    /**
-     * Updated: 2019-10-02
-     */
     [Serializable]
     public class IPProfile : INotifyPropertyChanged
     {
@@ -13,11 +10,11 @@ namespace XTransmit.Model.IPAddress
         public string Remarks { get; set; }
         public long Ping
         {
-            get { return ping_delay; }
+            get { return pingValue; }
             set
             {
-                ping_delay = value;
-                OnPropertyChanged("Ping");
+                pingValue = value;
+                OnPropertyChanged(nameof(Ping));
             }
         }
 
@@ -25,11 +22,12 @@ namespace XTransmit.Model.IPAddress
         {
             IP = "100.100.100.100";
             Remarks = "";
-            ping_delay = 0;
+            pingValue = 0;
         }
 
-        //TODO - Create a ViewModel for IPProfile
-        private long ping_delay;
+        // related function may be removed
+        private long pingValue;
+
 
         /** INotifyPropertyChanged, Crap
          */

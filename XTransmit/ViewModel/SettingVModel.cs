@@ -1,53 +1,119 @@
-﻿namespace XTransmit.ViewModel
+﻿using MaterialDesignThemes.Wpf;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Windows;
+using XTransmit.Control;
+using XTransmit.Model;
+using XTransmit.Utility;
+using XTransmit.ViewModel.Element;
+
+namespace XTransmit.ViewModel
 {
-    /** 
-     * TODO - Add customize option.
-     * Updated: 2019-08-06
-     */
     class SettingVModel : BaseViewModel
     {
+        // options
         public int SSTimeouts
         {
-            get => App.GlobalConfig.SSTimeout;
+            get => ConfigManager.Global.SSTimeout;
             set
             {
-                App.GlobalConfig.SSTimeout = value;
-                OnPropertyChanged("ConectionTimeouts");
+                ConfigManager.Global.SSTimeout = value;
+                OnPropertyChanged(nameof(SSTimeouts));
             }
         }
 
         public int IPInfoConnTimeout
         {
-            get => App.GlobalConfig.IPInfoConnTimeout;
+            get => ConfigManager.Global.IPInfoConnTimeout;
             set
             {
-                App.GlobalConfig.IPInfoConnTimeout = value;
-                OnPropertyChanged("IPInfoConnTimeout");
+                ConfigManager.Global.IPInfoConnTimeout = value;
+                OnPropertyChanged(nameof(IPInfoConnTimeout));
             }
         }
 
         public int ResponseConnTimeout
         {
-            get { return App.GlobalConfig.ResponseConnTimeout; }
+            get { return ConfigManager.Global.ResponseConnTimeout; }
             set
             {
-                App.GlobalConfig.ResponseConnTimeout = value;
-                OnPropertyChanged("ResponseConnTimeout");
+                ConfigManager.Global.ResponseConnTimeout = value;
+                OnPropertyChanged(nameof(ResponseConnTimeout));
             }
         }
 
         public int PingTimeout
         {
-            get { return App.GlobalConfig.PingTimeout; }
+            get { return ConfigManager.Global.PingTimeout; }
             set
             {
-                App.GlobalConfig.PingTimeout = value;
-                OnPropertyChanged("PingTimeout");
+                ConfigManager.Global.PingTimeout = value;
+                OnPropertyChanged(nameof(PingTimeout));
             }
         }
 
+        public bool IsReplaceOldServer
+        {
+            get { return ConfigManager.Global.IsReplaceOldServer; }
+            set
+            {
+                ConfigManager.Global.IsReplaceOldServer = value;
+                OnPropertyChanged(nameof(IsReplaceOldServer));
+            }
+        }
+
+        // autorun
+        [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
+        public bool IsAutorun
+        {
+            get => ConfigManager.Global.IsAutorun;
+            set
+            {
+                if (value)
+                {
+                    SystemUtil.CheckOrCreateUserStartupShortcut();
+                }
+                else
+                {
+                    SystemUtil.DeleteUserStartupShortcuts();
+                }
+
+                ConfigManager.Global.IsAutorun = value;
+                OnPropertyChanged(nameof(IsAutorun));
+            }
+        }
+
+        // theme
+        [SuppressMessage("Globalization", "CA1822", Justification = "<Pending>")]
+        public bool IsDarkTheme
+        {
+            get => PreferenceManager.Global.IsDarkTheme;
+            set
+            {
+                PreferenceManager.Global.IsDarkTheme = value;
+                InterfaceCtrl.ModifyTheme(theme => theme.SetBaseTheme(value ? Theme.Dark : Theme.Light));
+            }
+        }
+
+        // status
+        public ItemView[] Status { get; }
+
         public SettingVModel()
         {
+            Status = new ItemView[]
+            {
+                new ItemView
+                {
+                    Label = (string)Application.Current.FindResource("dialog_setting_status_proxy_port"),
+                    Text=ConfigManager.Global.SystemProxyPort.ToString(CultureInfo.InvariantCulture),
+                },
+
+                new ItemView
+                {
+                    Label = (string)Application.Current.FindResource("dialog_setting_status_ss_port"),
+                    Text = ConfigManager.Global.GlobalSocks5Port.ToString(CultureInfo.InvariantCulture),
+                }
+            };
         }
     }
 }

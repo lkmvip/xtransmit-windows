@@ -1,18 +1,15 @@
-﻿using System.Windows;
+﻿using System;
+using System.Windows;
 
 namespace XTransmit.View
 {
-    /**
-     * Updated: 2019-08-06
-     */
+    // TODO - Not used yet
     public partial class DialogEdit : Window
     {
-        public string EditText;
-
-        public DialogEdit(string title, string message)
+        public DialogEdit(string title, string message, Action action)
         {
             InitializeComponent();
-            DataContext = new ViewModel.DialogEditVModel(title, message);
+            DataContext = new ViewModel.DialogEditVModel(title, message, action);
         }
     }
 }

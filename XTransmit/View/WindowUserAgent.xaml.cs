@@ -1,19 +1,17 @@
 ﻿using System.Windows;
+using System.Windows.Controls;
 using XTransmit.Model;
 using XTransmit.ViewModel;
 
 namespace XTransmit.View
 {
-    /**
-     * Updated: 2019-09-28
-     */
     public partial class WindowUserAgent : Window
     {
         public WindowUserAgent()
         {
             InitializeComponent();
 
-            Preference preference = App.GlobalPreference;
+            Preference preference = PreferenceManager.Global;
             Left = preference.WindowUserAgent.X;
             Top = preference.WindowUserAgent.Y;
             Width = preference.WindowUserAgent.W;
@@ -25,12 +23,12 @@ namespace XTransmit.View
 
         private void WindowUserAgent_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            xDataGrid.CommitEdit();
-            xDataGrid.CancelEdit();
-            ((UserAgentVModel)DataContext).OnWindowClosing();
+            xDataGrid.CancelEdit(DataGridEditingUnit.Cell);
+            xDataGrid.CancelEdit(DataGridEditingUnit.Row);
+            ((UserAgentVModel)DataContext).OnWindowClosing(); // better way?
 
             // Save window placement
-            Preference preference = App.GlobalPreference;
+            Preference preference = PreferenceManager.Global;
             preference.WindowUserAgent.X = Left;
             preference.WindowUserAgent.Y = Top;
             preference.WindowUserAgent.W = Width;

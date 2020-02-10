@@ -1,19 +1,16 @@
 ﻿using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using XTransmit.Model.Curl;
-using XTransmit.ViewModel.Control;
 
 namespace XTransmit.ViewModel
 {
-    /**
-     * Updated: 2019-08-04
-     */
-    public class CurlPlayVModel : BaseViewModel
+    internal class CurlPlayVModel : BaseViewModel, IDisposable
     {
         public SiteProfile Profile { get; private set; }
-        public ProgressInfo Progress { get; private set; }
 
-        public string WindowTitle { get { return $"{Profile.Website} {Profile.Title}"; } }
+        public string WindowTitle => $"{Profile.Website} {Profile.Title}";
         public double WindowProgress { get; private set; }
 
         public bool IsNotRunning { get; private set; }
@@ -28,19 +25,34 @@ namespace XTransmit.ViewModel
         public CurlPlayVModel(SiteProfile siteProfile, Action<SiteProfile> actionSaveProfile)
         {
             Profile = siteProfile;
-            Progress = new ProgressInfo(0, false);
             WindowProgress = 0;
 
             IsNotRunning = true;
             IsRandomDelay = Profile.DelayMax > Profile.DelayMin;
 
-            DelaySetting = IsRandomDelay ? $"{Profile.DelayMin} - {Profile.DelayMax}" : Profile.DelayMin.ToString();
+            DelaySetting = IsRandomDelay ? $"{Profile.DelayMin} - {Profile.DelayMax}"
+                : Profile.DelayMin.ToString(CultureInfo.InvariantCulture);
             ResponseList = new ObservableCollection<CurlResponse>();
 
-            siteWorker = new SiteWorker(OnStateUpdated, OnSiteResponse);
+            siteWorker = new SiteWorker(ActionStateUpdated, ActionSiteResponse);
             this.actionSaveProfile = actionSaveProfile;
         }
 
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                siteWorker.Dispose();
+            }
+        }
+
+        [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
         private bool ParseDelay(string delay)
         {
             int delay_minimum;
@@ -53,7 +65,7 @@ namespace XTransmit.ViewModel
                 try
                 {
                     // no random delay
-                    delay_minimum = int.Parse(delay);
+                    delay_minimum = int.Parse(delay, CultureInfo.InvariantCulture);
                 }
                 catch { return false; }
             }
@@ -62,8 +74,8 @@ namespace XTransmit.ViewModel
                 try
                 {
                     // random delay
-                    delay_minimum = int.Parse(delay_splited[0]);
-                    delay_maximum = int.Parse(delay_splited[1]);
+                    delay_minimum = int.Parse(delay_splited[0], CultureInfo.InvariantCulture);
+                    delay_maximum = int.Parse(delay_splited[1], CultureInfo.InvariantCulture);
                 }
                 catch { return false; }
             }
@@ -75,51 +87,47 @@ namespace XTransmit.ViewModel
 
         /** Actions ===================================================================================
          */
-        private void OnStateUpdated(bool isRunning)
+        private void ActionStateUpdated(bool isRunning)
         {
             IsNotRunning = !isRunning;
             if (IsNotRunning)
             {
-                Progress.Set(0, false);
                 WindowProgress = 0;
             }
-            else
-            {
-                Progress.Set(70, true);
-            }
 
-            OnPropertyChanged("IsNotRunning");
-            OnPropertyChanged("Progress");
-            OnPropertyChanged("WindowProgress");
+            OnPropertyChanged(nameof(IsNotRunning));
+            OnPropertyChanged(nameof(WindowProgress));
         }
 
-        private void OnSiteResponse(CurlResponse curlResponse)
+        private void ActionSiteResponse(CurlResponse curlResponse)
         {
             WindowProgress = (double)curlResponse.Index / Profile.PlayTimes;
             ResponseList.Insert(0, curlResponse);
 
-            OnPropertyChanged("WindowProgress");
+            OnPropertyChanged(nameof(WindowProgress));
         }
 
         /** Commands ==================================================================================
          */
         public RelayCommand CommandSetDalay => new RelayCommand(UpdateDelay);
+
         private void UpdateDelay(object parameter)
         {
             ParseDelay(DelaySetting);
 
             IsRandomDelay = Profile.DelayMax > Profile.DelayMin;
-            DelaySetting = IsRandomDelay ? $"{Profile.DelayMin} - {Profile.DelayMax}" : Profile.DelayMin.ToString();
+            DelaySetting = IsRandomDelay ? $"{Profile.DelayMin} - {Profile.DelayMax}"
+                : Profile.DelayMin.ToString(CultureInfo.InvariantCulture);
 
-            OnPropertyChanged("DelaySetting");
-            OnPropertyChanged("IsRandomDelay");
+            OnPropertyChanged(nameof(DelaySetting));
+            OnPropertyChanged(nameof(IsRandomDelay));
         }
 
         public RelayCommand CommandSaveProfile => new RelayCommand(SaveProfile, CanSaveProfile);
         private bool CanSaveProfile(object parameter) => actionSaveProfile != null;
         private void SaveProfile(object parameter)
         {
-            actionSaveProfile(Profile);
+            actionSaveProfile.Invoke(Profile);
         }
 
         public RelayCommand CommandTogglePlay => new RelayCommand(TogglePlayAsync);
@@ -128,19 +136,16 @@ namespace XTransmit.ViewModel
             IsNotRunning = !IsNotRunning;
             if (IsNotRunning)
             {
-                Progress.Set(0, false);
                 WindowProgress = 0;
                 siteWorker.StopBgWork();
             }
             else
             {
-                Progress.Set(70, true);
                 siteWorker.StartBgWork(Profile);
             }
 
-            OnPropertyChanged("IsNotRunning");
-            OnPropertyChanged("Progress");
-            OnPropertyChanged("WindowProgress");
+            OnPropertyChanged(nameof(IsNotRunning));
+            OnPropertyChanged(nameof(WindowProgress));
         }
 
         // response ------------------------------------------------------------

@@ -1,46 +1,59 @@
 ﻿using LiveCharts;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq;
 using System.Net.NetworkInformation;
 using System.Windows;
 using System.Windows.Media;
+using XTransmit.Model;
 using XTransmit.Model.Network;
 using XTransmit.Utility;
 
 namespace XTransmit.ViewModel
 {
-    /**
-     * Updated: 2019-08-02
-     */
-    class ContentNetworkVModel : BaseViewModel
+    class ContentNetworkVModel : BaseViewModel, IDisposable
     {
-        private bool vIsActivated = false;
+        private bool isActivated = false;
         public bool IsActivated
         {
-            get { return vIsActivated; }
-            set
+            get => isActivated;
+            private set
             {
-                vIsActivated = value;
-                if (vIsActivated) adapterSpeedMeter.Start();
-                else adapterSpeedMeter.Stop();
+                isActivated = value;
+                if (isActivated)
+                {
+                    adapterSpeedMeter.Start();
+                }
+                else
+                {
+                    adapterSpeedMeter.Stop();
+                }
             }
         }
 
-        public List<string> NetworkInterfaceAll { get; private set; } // interface descriptions
+        // interface descriptions
+        public List<string> NetworkInterfaceAll { get; }
+
+        [SuppressMessage("Globalization", "CA1822", Justification = "<Pending>")]
         public string NetworkInterfaceSelected
         {
-            get { return App.GlobalConfig.NetworkAdapter; }
-            set { App.GlobalConfig.NetworkAdapter = value; }
+            get => PreferenceManager.Global.NetworkAdapter;
+            set
+            {
+                PreferenceManager.Global.NetworkAdapter = value;
+            }
         }
 
-        public SeriesCollection ChartSeries { get; set; }
-        public Func<double, string> ChartXFormatter { get; set; }
-        public Func<double, string> ChartYFormatter { get; set; }
+        public SeriesCollection ChartSeries { get; }
+        public Func<double, string> ChartXFormatter { get; }
+        public Func<double, string> ChartYFormatter { get; }
 
         private readonly List<NetworkInterface> adapterList; // network interfaces
         private readonly BandwidthMeter adapterSpeedMeter;
 
+        // languages
         private static readonly string sr_download = (string)Application.Current.FindResource("_download");
         private static readonly string sr_upload = (string)Application.Current.FindResource("_upload");
 
@@ -71,7 +84,8 @@ namespace XTransmit.ViewModel
                 }
             };
 
-            ChartXFormatter = value => new DateTime((long)(value * TimeSpan.FromHours(1).Ticks)).ToString("HH:mm:ss");
+            ChartXFormatter = value => new DateTime((long)(value * TimeSpan.FromHours(1).Ticks)).ToString("HH:mm:ss", 
+                CultureInfo.InvariantCulture);
             ChartYFormatter = value => $"{TextUtil.GetBytesReadable((long)value)}/s";
 
             // get network interfaces
@@ -81,35 +95,67 @@ namespace XTransmit.ViewModel
 
             NetworkInterfaceAll = new List<string>();
             foreach (NetworkInterface adapter in adapterList)
+            {
                 NetworkInterfaceAll.Add(adapter.Description);
+            }
 
             // init speed meter
             adapterSpeedMeter = new BandwidthMeter(AdapterSpeedMeter_UpdateSpeed);
 
             if (NetworkInterfaceAll.Count > 0)
             {
-                if (NetworkInterfaceAll.FirstOrDefault(item => item == NetworkInterfaceSelected) == null)
+                if (NetworkInterfaceSelected == null ||
+                    NetworkInterfaceAll.FirstOrDefault(item => item == NetworkInterfaceSelected) == null)
+                {
                     NetworkInterfaceSelected = adapterList[0].Description;
+                }
 
+                // also start the meter
                 IsActivated = true;
             }
-
-            // stop SpeedMeter on closing
-            Application.Current.MainWindow.Closing += MainWindow_Closing;
         }
 
-        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        ~ContentNetworkVModel()
         {
-            // case "hide" 
-            if (Application.Current.MainWindow.IsVisible)
-                return;
-
             adapterSpeedMeter.Stop();
+            Dispose();
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                adapterSpeedMeter.Dispose();
+            }
+        }
+
+        private void AdapterSpeedMeter_UpdateSpeed(long[] values)
+        {
+            DateTime now = DateTime.Now;
+            ChartSeries[0].Values.Add(new BandwidthInfo(now, values[0]));
+            ChartSeries[1].Values.Add(new BandwidthInfo(now, values[1]));
+
+            // Remove data older than 30 seconds
+            if (ChartSeries[0].Values.Count > 30)
+            {
+                ChartSeries[0].Values.RemoveAt(0);
+            }
+
+            if (ChartSeries[1].Values.Count > 30)
+            {
+                ChartSeries[1].Values.RemoveAt(0);
+            }
         }
 
 
-        /** Network interfaces --------------------------------------------------------
-         */
+        // Change network interfaces. 
+        // NOTE - Move it into NetworkInterfaceSelected property set method?
         public void UpdateNetworkInterface()
         {
             if (NetworkInterfaceSelected != null)
@@ -120,29 +166,13 @@ namespace XTransmit.ViewModel
         }
 
 
-        /** Actions ===================================================================
-         */
-        private void AdapterSpeedMeter_UpdateSpeed(long[] values)
-        {
-            DateTime now = DateTime.Now;
-            ChartSeries[0].Values.Add(new BandwidthInfo(now, values[0]));
-            ChartSeries[1].Values.Add(new BandwidthInfo(now, values[1]));
-
-            // Remove data older than 30 seconds
-            if (ChartSeries[0].Values.Count > 30) ChartSeries[0].Values.RemoveAt(0);
-            if (ChartSeries[1].Values.Count > 30) ChartSeries[1].Values.RemoveAt(0);
-
-            OnPropertyChanged("ValueSent");
-            OnPropertyChanged("ValueReceived");
-        }
-
         /** Commands ==================================================================
          */
         public RelayCommand CommandToggleActivate => new RelayCommand(ToggleActivate);
-        private void ToggleActivate(object obj)
+        private void ToggleActivate(object parameter)
         {
             IsActivated = !IsActivated;
-            OnPropertyChanged("IsActivated");
+            OnPropertyChanged(nameof(IsActivated));
         }
     }
 }

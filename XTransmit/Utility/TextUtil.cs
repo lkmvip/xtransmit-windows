@@ -1,13 +1,13 @@
-﻿using System.IO;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml;
 using System.Xml.Serialization;
 
 namespace XTransmit.Utility
 {
-    /**
-     * Updated: 2019-10-02
-     */
     public static class TextUtil
     {
         /**
@@ -59,14 +59,14 @@ namespace XTransmit.Utility
             }
             else
             {
-                return i.ToString("0 B"); // Byte
+                return i.ToString("0 B", CultureInfo.InvariantCulture); // Byte
             }
 
             // Divide by 1024 to get fractional value
             readable = (readable / 1024);
 
             // Return formatted number with suffix
-            return readable.ToString("0.## ") + suffix;
+            return readable.ToString("0.## ", CultureInfo.InvariantCulture) + suffix;
         }
 
         /**<summary>
@@ -74,30 +74,58 @@ namespace XTransmit.Utility
          * Time-consuming 21ms, 19ms, 20ms
          * </summary>
          */
+        [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
         public static object CopyBySerializer(object objectFrom)
         {
-            XmlSerializer xmlSerializer = new XmlSerializer(objectFrom.GetType());
-            MemoryStream memoryStream = new MemoryStream();
+            if(objectFrom == null)
+            {
+                return null;
+            }
 
-            xmlSerializer.Serialize(memoryStream, objectFrom);
-            memoryStream.Position = 0;
-            object objectTo = xmlSerializer.Deserialize(memoryStream);
+            MemoryStream memoryStream = null;
+            XmlReader xmlReader = null;
+            object objectTo = null;
 
-            memoryStream.Close();
-            memoryStream.Dispose();
+            try
+            {
+                memoryStream = new MemoryStream();
+                XmlSerializer xmlSerializer = new XmlSerializer(objectFrom.GetType());
+
+                xmlSerializer.Serialize(memoryStream, objectFrom);
+                memoryStream.Position = 0;
+
+                xmlReader = XmlReader.Create(memoryStream);
+                objectTo = xmlSerializer.Deserialize(xmlReader);
+
+                xmlReader.Close();
+                memoryStream.Close();
+            }
+            catch { }
+            finally
+            {
+                xmlReader?.Dispose();
+                memoryStream?.Dispose();
+            }
+
             return objectTo;
         }
 
+        [SuppressMessage("Security", "CA5351:Do Not Use Broken Cryptographic Algorithms", Justification = "<Pending>")]
         public static byte[] GetMD5(object objectXmlUtf8)
         {
+            if (objectXmlUtf8 == null)
+            {
+                return null;
+            }
+
             byte[] md5Value = null;
             using (MemoryStream memObj = new MemoryStream())
             using (StreamWriter swMem = new StreamWriter(memObj, new UTF8Encoding(false)))
             using (MD5 md5 = MD5.Create())
             {
                 new XmlSerializer(objectXmlUtf8.GetType()).Serialize(swMem, objectXmlUtf8);
-                swMem.Flush(); 
-                
+                swMem.Flush();
+
                 /**Any data written to a MemoryStream object is written into RAM, 
                  * MemoryStream.Flush() method is redundant.
                  */

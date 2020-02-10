@@ -1,16 +1,17 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml;
 using System.Xml.Serialization;
 
 namespace XTransmit.Utility
 {
-    /**
-     * Updated: 2019-09-29
-     */
-    public static class FileUtil
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
+    internal static class FileUtil
     {
         public static bool CheckMD5(string filePath, string md5Hex)
         {
@@ -20,16 +21,21 @@ namespace XTransmit.Utility
                 return false;
             }
 
-            // Create a new Stringbuilder to collect the bytes and create a string.
+            // convert input md5 hex string to the "0x" format
             StringBuilder sBuilder = new StringBuilder();
             for (int i = 0; i < md5File.Length; i++)
             {
-                sBuilder.Append(md5File[i].ToString("x2"));
+                sBuilder.Append(md5File[i].ToString("x2", CultureInfo.InvariantCulture));
             }
 
-            return sBuilder.ToString().Equals(md5Hex);
+            return sBuilder.ToString().Equals(md5Hex, StringComparison.OrdinalIgnoreCase);
         }
 
+        /*
+         * TODO - Use cryptographically stronger options
+         * https://docs.microsoft.com/en-us/visualstudio/code-quality/ca5351?view=vs-2019
+         */
+        [SuppressMessage("Security", "CA5351:Do Not Use Broken Cryptographic Algorithms", Justification = "<Pending>")]
         public static byte[] GetMD5(string filePath)
         {
             // original data
@@ -43,7 +49,7 @@ namespace XTransmit.Utility
                     md5Value = md5.ComputeHash(fileStream);
                     fileStream.Close();
                 }
-                catch (Exception)
+                catch
                 {
                     return null;
                 }
@@ -66,7 +72,7 @@ namespace XTransmit.Utility
                 fileStream.Write(buffer, 0, buffer.Length);
                 fileStream.Close();
             }
-            catch (Exception)
+            catch
             {
                 return false;
             }
@@ -91,7 +97,7 @@ namespace XTransmit.Utility
 
                 swXml.Close();
             }
-            catch (Exception) { }
+            catch { }
             finally
             {
                 swXml?.Dispose();
@@ -102,16 +108,21 @@ namespace XTransmit.Utility
         {
             object result = null;
             FileStream fsXml = null;
+            XmlReader xmlReader = null;
 
             try
             {
                 fsXml = new FileStream(pathXml, FileMode.Open);
-                result = new XmlSerializer(type).Deserialize(fsXml);
+                xmlReader = XmlReader.Create(fsXml);
+                result = new XmlSerializer(type).Deserialize(xmlReader);
+
+                xmlReader.Close();
                 fsXml.Close();
             }
-            catch (Exception) { }
+            catch { }
             finally
             {
+                xmlReader?.Dispose();
                 fsXml?.Dispose();
             }
 
@@ -143,7 +154,7 @@ namespace XTransmit.Utility
                 gzStream.Close();
                 fileStream.Close();
             }
-            catch (Exception)
+            catch
             {
                 return false;
             }

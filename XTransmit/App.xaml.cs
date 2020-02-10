@@ -1,31 +1,40 @@
-﻿using System.IO;
+﻿using MaterialDesignThemes.Wpf;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Windows;
+using XTransmit.Control;
 using XTransmit.Model;
+using XTransmit.Model.Server;
 using XTransmit.Utility;
 
 namespace XTransmit
 {
-    /**TODO - English, Chinese language
-     * TODO - App Analyze
-     * TODO - Reset preference if environment has changed
+    /**
+     * TODO - English, Chinese language
      * TODO - Check memory leak, stream close, object dispose.
-     * TODO - Display no data available
      * TODO - Add support for Remote Http Proxy, SSR, V2Ray ...
      * TODO - Auto search and add servers
      * TODO - Auto detect and remove invalid servers
+     * TODO - Use Task instead BackgroundWorker
+     * TODO - git update-index --assume-unchanged/--no-assume-unchanged BINARY-FILES
+     * TODO - BaseBinaryCtrl Class
      * 
      * NOTE
-     * EventHandler name "_"
-     * 
-     * Updated: 2019-09-30
+     * Compares to DataGrid, ListView comes with "*" column width, double click, row sort and application command problems
+     * EventHandler name accept "_"
      */
     public partial class App : Application
     {
-        public static string PathCurrent { get; private set; }
-        public static string PathPrivoxy { get; private set; }
-        public static string PathShadowsocks { get; private set; }
-        public static string PathCurl { get; private set; }
+        public static string Name { get; private set; }
 
+        public static string DirectoryApplication { get; private set; }
+        public static string DirectoryPrivoxy { get; private set; }
+        public static string DirectoryShadowsocks { get; private set; }
+        public static string DirectoryV2Ray { get; private set; }
+        public static string DirectoryCurl { get; private set; }
+
+        public static string FileApplication { get; private set; }
         public static string FilePreferenceXml { get; private set; }
         public static string FileConfigXml { get; private set; }
         public static string FileIPAddressXml { get; private set; }
@@ -34,13 +43,10 @@ namespace XTransmit
         public static string FileServerXml { get; private set; }
         public static string FileCurlXml { get; private set; }
 
-        public static Preference GlobalPreference { get; private set; }
-        public static Config GlobalConfig { get; private set; }
-
-        private View.TrayNotify.SystemTray NotifyIcon;
 
         public static void CloseMainWindow()
         {
+            PreferenceManager.Global.IsWindowHomeVisible = Current.MainWindow.IsVisible;
             Current.MainWindow.Hide();
             Current.MainWindow.Close();
         }
@@ -50,7 +56,9 @@ namespace XTransmit
             if (Current.MainWindow.IsVisible)
             {
                 if (Current.MainWindow.WindowState == WindowState.Minimized)
+                {
                     Current.MainWindow.WindowState = WindowState.Normal;
+                }
 
                 Current.MainWindow.Activate();
             }
@@ -60,111 +68,151 @@ namespace XTransmit
             }
         }
 
-        public static void ShowNotify(string message)
-        {
-            View.WindowHome windowHome = (View.WindowHome)Current.MainWindow;
-            windowHome.SendSnakebarMessage(message);
-        }
-
-        public static void UpdateProgress(int progress)
-        {
-            View.WindowHome windowHome = (View.WindowHome)Current.MainWindow;
-            ViewModel.HomeVModel homeViewModel = (ViewModel.HomeVModel)windowHome.DataContext;
-            homeViewModel.UpdateProgress(progress);
-        }
-
-        public static void LockTransmit(bool enable)
-        {
-            View.WindowHome windowHome = (View.WindowHome)Current.MainWindow;
-            ViewModel.HomeVModel homeViewModel = (ViewModel.HomeVModel)windowHome.DataContext;
-            homeViewModel.LockTransmitControl(enable);
-        }
-
-        public static void EnableTransmit(bool enable)
-        {
-            View.WindowHome windowHome = (View.WindowHome)Current.MainWindow;
-            ViewModel.HomeVModel homeViewModel = (ViewModel.HomeVModel)windowHome.DataContext;
-            homeViewModel.IsTransmitEnabled = enable;
-        }
-
-        public static void UpdateTransmitServer(Model.Server.ServerProfile serverProfile)
-        {
-            View.WindowHome windowHome = (View.WindowHome)Current.MainWindow;
-            ViewModel.HomeVModel homeViewModel = (ViewModel.HomeVModel)windowHome.DataContext;
-            homeViewModel.UpdateTransmitServer(serverProfile);
-        }
-
-        public static void AddServerByScanQRCode()
-        {
-            View.WindowHome windowHome = (View.WindowHome)Current.MainWindow;
-            ViewModel.HomeVModel homeViewModel = (ViewModel.HomeVModel)windowHome.DataContext;
-            homeViewModel.AddServerByScanQRCode();
-        }
-
         /** Application ===============================================================================
          */
+        private bool IsProcessExist()
+        {
+            Process[] list = Process.GetProcessesByName("XTransmit");
+            if (list != null && list.Length > 1)
+            {
+                foreach (Process process in list)
+                {
+                    process.Dispose();
+                }
+
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
         private void Application_Startup(object sender, StartupEventArgs e)
         {
+            string dirData = "data";
+            string dirBin = "binary";
+
+            // to avoid loading WindowHome on startup fails
+            StartupUri = new System.Uri("View/WindowShutdown.xaml", System.UriKind.Relative);
+
+            // single instance
+            if (IsProcessExist())
+            {
+                Shutdown();
+                return;
+            }
+
             // init directory
-            PathCurrent = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location);
-            try { Directory.CreateDirectory($@"{PathCurrent}\datas"); }
-            catch { return; }
+            Name = (string)Current.FindResource("app_name");
 
-            PathPrivoxy = $@"{PathCurrent}\binary\privoxy";
-            PathShadowsocks = $@"{PathCurrent}\binary\shadowsocks";
-            PathCurl = $@"{PathCurrent}\binary\curl";
+            FileApplication = System.Reflection.Assembly.GetEntryAssembly().Location;
+            DirectoryApplication = Path.GetDirectoryName(FileApplication);
 
-            FilePreferenceXml = $@"{PathCurrent}\datas\Preference.xml";
-            FileConfigXml = $@"{PathCurrent}\datas\Config.xml";
-            FileIPAddressXml = $@"{PathCurrent}\datas\IPAddress.xml"; //china ip optimized
-            FileUserAgentXml = $@"{PathCurrent}\datas\UserAgent.xml";
+            try
+            {
+                Directory.CreateDirectory($@"{DirectoryApplication}\{dirData}");
+            }
+            catch
+            {
+                string title = Name;
+                string message = (string)FindResource("app_init_fail");
+                new View.DialogPrompt(title, message).ShowDialog();
 
-            FileServerXml = $@"{PathCurrent}\datas\Servers.xml";
-            FileCurlXml = $@"{PathCurrent}\datas\Curl.xml";
+                Shutdown();
+                return;
+            }
 
-            // init binaries
+            DirectoryPrivoxy = $@"{DirectoryApplication}\{dirBin}\privoxy";
+            DirectoryShadowsocks = $@"{DirectoryApplication}\{dirBin}\shadowsocks";
+            DirectoryV2Ray = $@"{DirectoryApplication}\{dirBin}\v2ray";
+            DirectoryCurl = $@"{DirectoryApplication}\{dirBin}\curl";
+
+            FilePreferenceXml = $@"{DirectoryApplication}\{dirData}\Preference.xml";
+            FileConfigXml = $@"{DirectoryApplication}\{dirData}\Config.xml";
+            FileIPAddressXml = $@"{DirectoryApplication}\{dirData}\IPAddress.xml"; //china ip optimized
+            FileUserAgentXml = $@"{DirectoryApplication}\{dirData}\UserAgent.xml";
+
+            FileServerXml = $@"{DirectoryApplication}\{dirData}\Servers.xml";
+            FileCurlXml = $@"{DirectoryApplication}\{dirData}\Curl.xml";
+
+            // initialize binaries
             PrivoxyManager.KillRunning();
             SSManager.KillRunning();
+            V2RayCtrl.KillRunning();
             CurlManager.KillRunning();
-            if (!PrivoxyManager.Prepare() || !SSManager.Prepare() || !CurlManager.Prepare())
+            if (!PrivoxyManager.Prepare()
+                || !SSManager.Prepare()
+                || !V2RayCtrl.Prepare()
+                || !CurlManager.Prepare())
             {
-                string app_name = (string)FindResource("app_name");
-                string app_error_binary = (string)FindResource("app_error_binary");
-                new View.DialogPrompt(app_name, app_error_binary).ShowDialog();
+                string title = Name;
+                string message = (string)FindResource("app_init_fail");
+                new View.DialogPrompt(title, message).ShowDialog();
 
                 Shutdown();
                 return;
             }
 
             // load data
-            GlobalPreference = Preference.LoadFileOrDefault(FilePreferenceXml);
-            GlobalConfig = Config.LoadFileOrDefault(FileConfigXml);
+            ServerManager.Load(FileServerXml);
+            PreferenceManager.LoadFileOrDefault(FilePreferenceXml);
+            ConfigManager.LoadFileOrDefault(FileConfigXml);
 
-            // notifyicon
-            NotifyIcon = new View.TrayNotify.SystemTray();
+            // initialize transmit
+            if (!TransmitCtrl.StartServer())
+            {
+                string title = Name;
+                string message = (string)FindResource("app_service_fail");
+                new View.DialogPrompt(title, message).ShowDialog();
+
+                Shutdown();
+                return;
+            }
+
+            TransmitCtrl.EnableTransmit(ConfigManager.Global.IsTransmitEnabled);
+
+            // initialize interface and theme
+            InterfaceCtrl.Initialize();
+            InterfaceCtrl.ModifyTheme(theme => theme.SetBaseTheme(
+                PreferenceManager.Global.IsDarkTheme ? Theme.Dark : Theme.Light));
+
+            // done
+            StartupUri = new System.Uri("View/WindowHome.xaml", System.UriKind.Relative);
             Exit += Application_Exit;
         }
 
         private void Application_Exit(object sender, ExitEventArgs e)
         {
-            NotifyIcon.Dispose();
+            TransmitCtrl.StopServer();
+            InterfaceCtrl.Uninit();
 
-            /** if there were other proxy servers running they should set system proxy again
-             */
-            NativeMethods.DisableProxy();
-            PrivoxyManager.Stop();
-            SSManager.KillRunning(); // server pool
+            // if there were other proxy servers running they should set system proxy again
+            _ = NativeMethods.DisableProxy();
+            PrivoxyManager.KillRunning(); // not important
+            SSManager.KillRunning();
+            V2RayCtrl.KillRunning();
+            CurlManager.KillRunning();
 
-            Preference.WriteFile(FilePreferenceXml, GlobalPreference);
-            Config.WriteFile(FileConfigXml, GlobalConfig);
+            PreferenceManager.WriteFile(FilePreferenceXml);
+            ConfigManager.WriteFile(FileConfigXml);
+
+            // fix autorun status. reduce startup time
+            if (ConfigManager.Global.IsAutorun)
+            {
+                SystemUtil.CheckOrCreateUserStartupShortcut();
+            }
+            else
+            {
+                SystemUtil.DeleteUserStartupShortcuts();
+            }
         }
 
-        // Something wrong happen, Unexpercted, Abnormally
-        private void Application_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+        // Something wrong happen, Unexpercted, Abnormally. Not set yet
+        private void Application_UnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
         {
-            // TODO - Handle exception safety
-            //string app_name = (string)FindResource("app_name");
-            //new View.DialogPrompt(app_name, e.Exception.Message).ShowDialog();
+            // Start another process to send feedback for user 
             Shutdown();
         }
     }

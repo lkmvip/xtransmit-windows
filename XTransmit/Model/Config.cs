@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using XTransmit.Model.Server;
 using XTransmit.Utility;
 
@@ -6,63 +7,81 @@ namespace XTransmit.Model
 {
     /**<summary>
      * Feature options. Such as SystemProxy, Privoxy, Shadowsocks.
-     * Updated: 2019-10-02
      * </summary> 
      */
     [Serializable]
     public class Config
     {
+        public bool IsAutorun { get; set; }
+
         // transmit
-        public bool IsTransmitEnabled;
-        public bool IsServerPoolEnabled;
-        public int SystemProxyPort;
-        public int GlobalSocks5Port;
-        public ServerProfile RemoteServer;
+        public bool IsTransmitEnabled { get; set; }
+        public int SystemProxyPort { get; set; }
+        public int GlobalSocks5Port { get; set; }
+        public string RemoteServerID { get; set; }
 
         // timeouts 
-        public int SSTimeout;
-        public int IPInfoConnTimeout;
-        public int ResponseConnTimeout;
-        public int PingTimeout; //ms
+        public int SSTimeout { get; set; }
+        public int IPInfoConnTimeout { get; set; }
+        public int ResponseConnTimeout { get; set; } //not used
+        public int PingTimeout { get; set; } //ms
 
-        public string NetworkAdapter;
-
+        // server
+        public bool IsReplaceOldServer { get; set; }
+        
         public Config()
         {
-            IsTransmitEnabled = false;
-            IsServerPoolEnabled = false;
+            IsAutorun = true;
 
+            IsTransmitEnabled = false;
             SystemProxyPort = 0;
             GlobalSocks5Port = 0;
-            RemoteServer = null;
+            RemoteServerID = null;
 
-            SSTimeout = 3;
+            SSTimeout = 5;
             IPInfoConnTimeout = 6;
             ResponseConnTimeout = 6;
-            PingTimeout = 1200;
-        }
+            PingTimeout = 3000;
 
+            IsReplaceOldServer = false;
+        }
+    }
+
+    internal static class ConfigManager
+    {
+        public static Config Global;
+
+        //status
+        public static ServerProfile RemoteServer = null;
+        public static bool IsServerPoolEnabled = false;
 
         /**<summary>
          * Object is constructed by serializer with default values,
          * property (which also specified in the XML) value will be overwritten from the XML
          * </summary>
          */
-        public static Config LoadFileOrDefault(string pathConfigXml)
+        public static void LoadFileOrDefault(string pathConfigXml)
         {
             if (FileUtil.XmlDeserialize(pathConfigXml, typeof(Config)) is Config config)
             {
-                return config;
+                Global = config;
+
+                // restore status
+                RemoteServer = ServerManager.ServerList.FirstOrDefault(
+                    server => server.GetID() == config.RemoteServerID);
             }
             else
             {
-                return new Config();
+                Global = new Config();
             }
         }
 
-        public static void WriteFile(string pathConfigXml, Config config)
+        public static void WriteFile(string pathConfigXml)
         {
-            FileUtil.XmlSerialize(pathConfigXml, config);
+            // save status
+            Global.RemoteServerID = RemoteServer?.GetID();
+
+            FileUtil.XmlSerialize(pathConfigXml, Global);
         }
     }
 }

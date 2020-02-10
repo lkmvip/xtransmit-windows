@@ -1,25 +1,37 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Net.NetworkInformation;
 using System.Threading;
 
 namespace XTransmit.Model.Network
 {
-    /**TODO - Start-Stop test
-     * Updated: 2019-08-02
-     */
-    public class BandwidthMeter
+    internal class BandwidthMeter : IDisposable
     {
-        private readonly Action<long[]> OnSpeedUpdated;
+        private readonly Action<long[]> actionSpeedUpdated;
         private NetworkInterface adapter = null;
         private BackgroundWorker bgWork = null;
 
         private long adapterBytesSent = 0;
         private long adapterBytesReceived = 0;
 
-        public BandwidthMeter(Action<long[]> OnSpeedUpdated)
+        public BandwidthMeter(Action<long[]> actionSpeedUpdated)
         {
-            this.OnSpeedUpdated = OnSpeedUpdated;
+            this.actionSpeedUpdated = actionSpeedUpdated;
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Stop();
+            }
         }
 
         public void SetAdapter(NetworkInterface adapterNew)
@@ -29,6 +41,11 @@ namespace XTransmit.Model.Network
             IPInterfaceStatistics statistic = adapter.GetIPStatistics();
             adapterBytesReceived = statistic.BytesReceived;
             adapterBytesSent = statistic.BytesSent;
+        }
+
+        public void Start2()
+        {
+
         }
 
         public void Start()
@@ -47,16 +64,21 @@ namespace XTransmit.Model.Network
         public void Stop()
         {
             if (bgWork == null)
+            {
                 return;
+            }
 
             if (bgWork.IsBusy)
+            {
                 bgWork.CancelAsync();
+            }
 
             bgWork.DoWork -= BWDoWork;
             bgWork.ProgressChanged -= BWProgressChanged;
             bgWork.Dispose();
         }
 
+        [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
         private void BWDoWork(object sender, DoWorkEventArgs e)
         {
             while (!bgWork.CancellationPending)
@@ -77,7 +99,10 @@ namespace XTransmit.Model.Network
                     adapterBytesSent = statistic.BytesSent;
                     bgWork.ReportProgress(0, userState: values);
                 }
-                catch (Exception) { continue; }
+                catch
+                {
+                    continue;
+                }
             }
         }
 
@@ -86,7 +111,7 @@ namespace XTransmit.Model.Network
             if (e.UserState is long[] values)
             {
                 // callback, publish values
-                OnSpeedUpdated?.Invoke(values);
+                actionSpeedUpdated?.Invoke(values);
             }
         }
     }

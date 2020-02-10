@@ -2,13 +2,10 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
-        FontFamily="pack://application:,,,/MaterialDesignThemes.Wpf;component/Resources/Roboto/#Roboto"
-        Background="{DynamicResource MaterialDesignPaper}"
-        TextElement.Foreground="{DynamicResource MaterialDesignBody}"
-        TextElement.FontWeight="Medium"
-        TextElement.FontSize="14"
+        x:Name="xWindow"
         SizeToContent="WidthAndHeight"
         ResizeMode="NoResize"
+        Style="{StaticResource WindowApp}"
         Title="{StaticResource dialog_about_title}">
     <Window.Resources>
         <ResourceDictionary>
@@ -30,17 +27,17 @@
             <Image Grid.Column="0"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
-                   Width="128"
-                   Height="128"
+                   Width="100"
+                   Height="100"
                    Stretch="Fill"
-                   Source="/XTransmit.ico"/>
+                   Source="/Resources/Icon/XTransmit-On.ico"/>
 
             <StackPanel Grid.Column="1"
                         VerticalAlignment="Center"
                         Orientation="Vertical">
                 <TextBlock Margin="20"
                            HorizontalAlignment="Center"
-                           Style="{StaticResource MaterialDesignTitleTextBlock}"
+                           Style="{StaticResource MaterialDesignHeadline6TextBlock}"
                            Text="{Binding Path=Name}"/>
 
                 <TextBlock Margin="5"
@@ -56,8 +53,7 @@
         </Grid>
 
         <!-- opensource license ===================================================================== -->        
-        <ListView x:Name="xListView" 
-                  Grid.Row="1" Margin="10" 
+        <ListView Grid.Row="1" Margin="10" 
                   ItemsSource="{Binding OpensourceSoftware}">
             <ListView.View>
                 <GridView>
@@ -67,7 +63,7 @@
                             <DataTemplate>
                                 <TextBlock>
                                 <Hyperlink Style="{StaticResource MaterialDesignCaptionHyperlink}"
-                                           Command="{Binding ElementName=xListView, Path=DataContext.CommandViewLicense}"
+                                           Command="{Binding ElementName=xWindow, Path=DataContext.CommandViewLicense}"
                                            CommandParameter="{Binding Path=Uri}">
                                     <TextBlock Text="{Binding Path=Text}"/>
                                 </Hyperlink>

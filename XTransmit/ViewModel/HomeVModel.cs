@@ -1,72 +1,65 @@
 ﻿using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using XTransmit.Control;
 using XTransmit.Model;
-using XTransmit.Model.Server;
-using XTransmit.Utility;
-using XTransmit.ViewModel.Control;
+using XTransmit.ViewModel.Element;
 
 namespace XTransmit.ViewModel
 {
-    /**
-     * Updated: 2019-09-30
-     */
     public class HomeVModel : BaseViewModel
     {
+        [SuppressMessage("Globalization", "CA1822", Justification = "<Pending>")]
+        public string TransmitStatus => ConfigManager.RemoteServer?.FriendlyName ?? sr_server_not_set;
+
+        [SuppressMessage("Globalization", "CA1822", Justification = "<Pending>")]
+        public bool IsTransmitControllable => !ConfigManager.IsServerPoolEnabled;
+
+        [SuppressMessage("Globalization", "CA1822", Justification = "<Pending>")]
         public bool IsTransmitEnabled
         {
-            get => App.GlobalConfig.IsTransmitEnabled;
+            get => ConfigManager.Global.IsTransmitEnabled;
             set
             {
-                if (value)
-                {
-                    EnableTransmit();
-                }
-                else
-                {
-                    DisableTransmit();
-                }
+                TransmitCtrl.EnableTransmit(value);
 
-                //from notifyicon
-                OnPropertyChanged("IsTransmitEnabled"); 
+                // update interface
+                InterfaceCtrl.UpdateHomeTransmitStatue();
+                InterfaceCtrl.NotifyIcon.UpdateIcon();
             }
         }
-
-        public string TransmitStatus
-        {
-            get
-            {
-                return App.GlobalConfig.RemoteServer != null ?
-                    App.GlobalConfig.RemoteServer.FriendlyName : sr_server_not_set;
-            }
-        }
-
-        public bool IsTransmitControllable { get; private set; }
 
         // progress
-        public ProgressInfo Progress { get; private set; }
+        public ProgressView Progress { get; private set; }
+        public ObservableCollection<TaskView> TaskListOC { get; private set; }
 
-        // table
+        // tables
         public UserControl ContentDisplay { get; private set; }
-        public List<ContentTable> ContentList { get; private set; }
+        public List<ContentTable> ContentList { get; }
 
-        private static readonly string sr_server_not_set = (string)Application.Current.FindResource("server_not_set");
+        private static readonly string sr_server_not_set = (string)Application.Current.FindResource("home_server_not_set");
+        private static readonly string sr_server_title = (string)Application.Current.FindResource("server_title");
+        private static readonly string sr_network_title = (string)Application.Current.FindResource("netrowk_title");
+        private static readonly string sr_task_running = (string)Application.Current.FindResource("home_x_task_running");
+        private static readonly string sr_cant_add_server = (string)Application.Current.FindResource("home_cant_add_server");
 
         public HomeVModel()
         {
             // init progress
-            Progress = new ProgressInfo(0, false);
+            Progress = new ProgressView(0, false, null);
+            TaskListOC = new ObservableCollection<TaskView>();
 
             // init content list and display
             ContentList = new List<ContentTable>
             {
-                new ContentTable("Server", new View.ContentServer()),
-                new ContentTable("Netwrok", new View.ContentNetwork()),
+                new ContentTable(sr_server_title, new View.ContentServer()),
+                new ContentTable(sr_network_title, new View.ContentNetwork()),
             };
 
-            // TODO - Dragable table
-            ContentTable contentTable = ContentList.FirstOrDefault(predicate: x => x.Title == App.GlobalPreference.ContentDisplay);
+            ContentTable contentTable = ContentList.FirstOrDefault(predicate: x => x.Title == PreferenceManager.Global.HomeContentDisplay);
             if (contentTable == null)
             {
                 contentTable = ContentList[0];
@@ -74,129 +67,90 @@ namespace XTransmit.ViewModel
 
             contentTable.IsChecked = true;
             ContentDisplay = contentTable.Content;
-
-            // transmit control. Trigge the set
-            IsTransmitEnabled = App.GlobalConfig.IsTransmitEnabled;
-            IsTransmitControllable = true;
-
-            // save data on closing
-            Application.Current.MainWindow.Closing += MainWindow_Closing;
         }
 
-        private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
-        {
-            // case "hide" 
-            if (Application.Current.MainWindow.IsVisible)
-            {
-                return;
-            }
-
-            // save preference
-            ContentTable contentTable = ContentList.FirstOrDefault(predicate: x => x.IsChecked);
-            App.GlobalPreference.ContentDisplay = contentTable.Title;
-        }
-
-        private void EnableTransmit()
-        {
-            Config config = App.GlobalConfig;
-            if (config.RemoteServer == null)
-            {
-                return;
-            }
-
-            if (config.SystemProxyPort == 0)
-            {
-                config.SystemProxyPort = NetworkUtil.GetAvailablePort(2000);
-            }
-            else
-            {
-                List<int> portInUse = NetworkUtil.GetPortInUse(2000);
-                if (portInUse.Contains(config.SystemProxyPort))
-                {
-                    config.SystemProxyPort = NetworkUtil.GetAvailablePort(2000, portInUse);
-                }
-            }
-            NativeMethods.EnableProxy($"127.0.0.1:{config.SystemProxyPort}", NativeMethods.Bypass);
-
-            if (config.GlobalSocks5Port == 0)
-            {
-                config.GlobalSocks5Port = NetworkUtil.GetAvailablePort(3000);
-            }
-            else
-            {
-                List<int> portInUse = NetworkUtil.GetPortInUse(3000);
-                if (portInUse.Contains(config.GlobalSocks5Port))
-                {
-                    config.GlobalSocks5Port = NetworkUtil.GetAvailablePort(3000, portInUse);
-                }
-            }
-
-            PrivoxyManager.Start(config.SystemProxyPort, config.GlobalSocks5Port);
-            if (config.RemoteServer != null)
-            {
-                SSManager.Start(config.RemoteServer, config.GlobalSocks5Port);
-            }
-
-            App.GlobalConfig.IsTransmitEnabled = true;
-        }
-        private void DisableTransmit()
-        {
-            NativeMethods.DisableProxy();
-            PrivoxyManager.Stop();
-            SSManager.Stop(App.GlobalConfig.RemoteServer);
-
-            App.GlobalConfig.IsTransmitEnabled = false;
-        }
-
-        /** actoins ====================================================================================================== 
+        /** methods ====================================================================================================== 
          */
-        public void LockTransmitControl(bool enable)
+        public string GetCurrentContent()
         {
-            IsTransmitControllable = !enable;
-            OnPropertyChanged("IsTransmitControllable");
+            ContentTable contentTable = ContentList.FirstOrDefault(predicate: x => x.IsChecked);
+            return contentTable.Title;
         }
 
-        // a functional interface
+        public void UpdateTransmitStatus()
+        {
+            OnPropertyChanged(nameof(IsTransmitEnabled));
+            OnPropertyChanged(nameof(TransmitStatus));
+        }
+
+        public void UpdateTransmitLock()
+        {
+            OnPropertyChanged(nameof(IsTransmitControllable));
+        }
+
+        //ProgressBar is showing in indeterminate mode
+        public void AddTask(TaskView task)
+        {
+            if (!TaskListOC.Contains(task))
+            {
+                // max value: 100
+                TaskListOC.Add(task);
+
+                Progress.Value += (100 - Progress.Value) >> 1;
+                Progress.IsIndeterminate = true;
+                Progress.Description = $"{TaskListOC.Count} {sr_task_running}";
+
+                OnPropertyChanged(nameof(Progress));
+            }
+        }
+
+        public void RemoveTask(TaskView task)
+        {
+            if (TaskListOC.Contains(task))
+            {
+                TaskListOC.Remove(task);
+
+                Progress.Value -= (100 - Progress.Value);
+                Progress.IsIndeterminate = Progress.Value > 0;
+                Progress.Description = $"{TaskListOC.Count} {sr_task_running}";
+
+                OnPropertyChanged(nameof(Progress));
+            }
+        }
+
         public void AddServerByScanQRCode()
         {
-            // TODO - Take care of the ContentTables list order
-            ContentServerVModel serverViewModel = (ContentServerVModel)ContentList[0].Content.DataContext;
-            serverViewModel.CommandAddServerQRCode.Execute(null);
-        }
-
-        // Progress is indeterminated, This mothod increase/decrease the progress value.
-        // TODO Next - Progress list
-        public void UpdateProgress(int progress)
-        {
-            Progress.Value += progress;
-            if (Progress.Value < 0) Progress.Value = 0;
-
-            if (Progress.Value == 0) Progress.IsIndeterminate = false;
-            else Progress.IsIndeterminate = true;
-
-            OnPropertyChanged("Progress");
-        }
-
-        public void UpdateTransmitServer(ServerProfile serverProfile)
-        {
-            if (App.GlobalConfig.RemoteServer == null || !App.GlobalConfig.RemoteServer.Equals(serverProfile))
+            ContentTable contantTable = ContentList.FirstOrDefault(item => item.Title == sr_server_title);
+            ContentServerVModel serverViewModel = (ContentServerVModel)contantTable.Content.DataContext;
+            if (serverViewModel.CanEditList(null))
             {
-                if (App.GlobalConfig.IsTransmitEnabled)
-                {
-                    SSManager.Stop(App.GlobalConfig.RemoteServer);
-                    SSManager.Start(serverProfile, App.GlobalConfig.GlobalSocks5Port);
-                }
+                serverViewModel.CommandAddServerQRCode.Execute(null);
             }
+            else
+            {
+                InterfaceCtrl.NotifyIcon.ShowMessage(sr_cant_add_server);
+            }
+        }
 
-            App.GlobalConfig.RemoteServer = serverProfile;
-            OnPropertyChanged("TransmitStatus");
+        public void AddServerFromClipboard()
+        {
+            ContentTable contantTable = ContentList.FirstOrDefault(item => item.Title == sr_server_title);
+            ContentServerVModel serverViewModel = (ContentServerVModel)contantTable.Content.DataContext;
+            if (serverViewModel.CanEditList(null))
+            {
+                serverViewModel.CommandAddServerClipboard.Execute(null);
+            }
+            else
+            {
+                InterfaceCtrl.NotifyIcon.ShowMessage(sr_cant_add_server);
+            }
         }
 
 
         /** Commands ======================================================================================================
          */
-        public RelayCommand CommandSwitchContent => new RelayCommand(SwitchContent);
-        private void SwitchContent(object newTitle)
+        public RelayCommand CommandSelectContent => new RelayCommand(SelectContent);
+        private void SelectContent(object newTitle)
         {
             if (newTitle is string title)
             {
@@ -204,23 +158,48 @@ namespace XTransmit.ViewModel
                 if (ContentDisplay != content)
                 {
                     ContentDisplay = content;
-                    OnPropertyChanged("ContentDisplay");
+                    OnPropertyChanged(nameof(ContentDisplay));
                 }
             }
         }
 
-        // open curl
+        public RelayCommand CommandStopTask => new RelayCommand(StopTask);
+        private void StopTask(object parameter)
+        {
+            if (parameter is string name)
+            {
+                TaskView taskView = TaskListOC.FirstOrDefault(task => task.Name == name);
+                taskView?.StopAction?.Invoke();
+            }
+        }
+
+        // open the xcurl
         public RelayCommand CommandShowCurl => new RelayCommand(ShowCurl);
         private void ShowCurl(object parameter)
         {
-            new View.WindowCurl().Show();
+            // save data first
+            ContentTable contantTable = ContentList.FirstOrDefault(item => item.Title == sr_server_title);
+            ContentServerVModel serverViewModel = (ContentServerVModel)contantTable.Content.DataContext;
+            serverViewModel.CommandSaveServer.Execute(null);
+
+            // show curl
+            View.WindowCurl windowCurl = Application.Current.Windows.OfType<View.WindowCurl>().FirstOrDefault();
+            if (windowCurl == null)
+            {
+                windowCurl = new View.WindowCurl();
+                windowCurl.Show();
+            }
+            else
+            {
+                windowCurl.Activate();
+            }
         }
 
         // show setting
         public RelayCommand CommandShowSetting => new RelayCommand(ShowSetting);
         private void ShowSetting(object parameter)
         {
-            new View.DialogSetting().ShowDialog();
+            InterfaceCtrl.ShowSetting();
         }
 
         // show about

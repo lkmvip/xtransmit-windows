@@ -1,26 +1,27 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Net.NetworkInformation;
 using System.Windows;
+using XTransmit.Model;
 using XTransmit.Model.IPAddress;
-using XTransmit.ViewModel.Control;
 
 namespace XTransmit.ViewModel
 {
-    /**TODO - Cancelable Ping
-     * Updated: 2019-09-28
+    /**
+     * TODO - Optimize or remove the ping check
      */
     class IPAddressVModel : BaseViewModel
     {
-        public ProgressInfo Progress { get; private set; }
+        public bool IsProcessingPing { get; private set; } = false;
 
         public ObservableCollection<IPProfile> IPListOC { get; private set; }
 
         private static readonly object lock_sync = new object();
+
         public IPAddressVModel()
         {
-            Progress = new ProgressInfo(0, false);
-            IPListOC = new ObservableCollection<IPProfile>(IPManager.IPList);
+            IPListOC = new ObservableCollection<IPProfile>(IPManager.GetIPArray());
 
             //msdn.microsoft.com/en-us/library/hh198861.aspx
             System.Windows.Data.BindingOperations.EnableCollectionSynchronization(IPListOC, lock_sync);
@@ -29,26 +30,39 @@ namespace XTransmit.ViewModel
         public void OnWindowClosing()
         {
             // isPingInProcess is also use to cancel task
-            isPingInProcess = false;
+            IsProcessingPing = false;
 
             // save ip address data if there are changes
-            List<IPProfile> iplist = new List<IPProfile>(IPListOC);
-            if (IPManager.HasChangesToFile(iplist))
+            IPProfile[] ipArray = new List<IPProfile>(IPListOC).ToArray();
+            if (IPManager.HasChangesToFile(ipArray))
             {
                 string title = (string)Application.Current.FindResource("ip_title");
                 string ask_save = (string)Application.Current.FindResource("ip_ask_save_data");
+                string sr_yes = (string)Application.Current.FindResource("_yes");
+                string sr_no = (string)Application.Current.FindResource("_no");
 
-                View.DialogAction dialog = new View.DialogAction(title, ask_save);
+                bool save = false;
+                Dictionary<string, Action> actions = new Dictionary<string, Action>
+                {
+                    {
+                        sr_yes,
+                        () => { save = true; }
+                    },
+
+                    {
+                        sr_no,
+                        () => { save = false; }
+                    },
+                };
+                View.DialogAction dialog = new View.DialogAction(title, ask_save, actions);
                 dialog.ShowDialog();
 
-                if (dialog.CancelableResult == true)
+                if (save)
                 {
-                    IPManager.IPList = iplist;
-                    IPManager.Save();
+                    IPManager.Save(ipArray);
                 }
                 else
                 {
-                    // NOTE - Is ObservableCollection write data into the list item?
                     IPManager.Reload();
                 }
             }
@@ -57,17 +71,19 @@ namespace XTransmit.ViewModel
 
         /** Commands --------------------------------------------------------------------------
          */
-        private volatile bool isPingInProcess = false;
+        public void StopPing()
+        {
+            IsProcessingPing = false;
+        }
 
         // save data
         public RelayCommand CommandSaveData => new RelayCommand(SaveData);
         private void SaveData(object parameter)
         {
-            List<IPProfile> iplist = new List<IPProfile>(IPListOC);
-            if (IPManager.HasChangesToFile(iplist))
+            IPProfile[] ipArray = new List<IPProfile>(IPListOC).ToArray();
+            if (IPManager.HasChangesToFile(ipArray))
             {
-                IPManager.IPList = iplist;
-                IPManager.Save();
+                IPManager.Save(ipArray);
             }
         }
 
@@ -76,8 +92,8 @@ namespace XTransmit.ViewModel
         private void ReloadData(object parameter)
         {
             IPManager.Reload();
-            IPListOC = new ObservableCollection<IPProfile>(IPManager.IPList);
-            OnPropertyChanged("IPListOC");
+            IPListOC = new ObservableCollection<IPProfile>(IPManager.GetIPArray());
+            OnPropertyChanged(nameof(IPListOC));
         }
 
         // add new data to datatable
@@ -86,7 +102,7 @@ namespace XTransmit.ViewModel
         {
             Microsoft.Win32.OpenFileDialog openFileDialog = new Microsoft.Win32.OpenFileDialog
             {
-                InitialDirectory = App.PathCurrent,
+                InitialDirectory = App.DirectoryApplication,
                 DefaultExt = "txt",
                 Filter = "Text File|*.txt",
                 AddExtension = true
@@ -109,37 +125,31 @@ namespace XTransmit.ViewModel
 
         // ping
         public RelayCommand CommandPingCheck => new RelayCommand(PingCheckAsync, CanPingCheck);
-        private bool CanPingCheck(object parameter) => !isPingInProcess;
+        private bool CanPingCheck(object parameter) => !IsProcessingPing;
         private async void PingCheckAsync(object parameter)
         {
-            isPingInProcess = true;
+            IsProcessingPing = true;
+            OnPropertyChanged(nameof(IsProcessingPing));
             System.Windows.Input.CommandManager.InvalidateRequerySuggested();
 
-            Progress.IsIndeterminate = true;
-            Progress.Value = 50;
-            OnPropertyChanged("Progress");
-
-            int timeout = App.GlobalConfig.PingTimeout;
+            int timeout = ConfigManager.Global.PingTimeout;
             using (Ping ping = new Ping())
             {
                 foreach (IPProfile ipProfile in IPListOC)
                 {
                     // isPingInProcess is also use to cancel task
-                    if (isPingInProcess == false)
+                    if (IsProcessingPing == false)
                     {
-                        return;
+                        break;
                     }
 
-                    PingReply reply = await ping.SendPingAsync(ipProfile.IP, timeout);
+                    PingReply reply = await ping.SendPingAsync(ipProfile.IP, timeout).ConfigureAwait(true);
                     ipProfile.Ping = (reply.Status == IPStatus.Success) ? reply.RoundtripTime : -1;
                 }
             }
 
-            Progress.IsIndeterminate = false;
-            Progress.Value = 0;
-            OnPropertyChanged("Progress");
-
-            isPingInProcess = false;
+            IsProcessingPing = false;
+            OnPropertyChanged(nameof(IsProcessingPing));
             System.Windows.Input.CommandManager.InvalidateRequerySuggested();
         }
     }

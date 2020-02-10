@@ -1,18 +1,21 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Management;
 using System.Net;
 using System.Net.NetworkInformation;
 
 namespace XTransmit.Utility
 {
-    /**
-     * Updated: 2019-09-30
-     */
     public static class NetworkUtil
     {
-        public static int CompareNetworkInterfaceBySpeed(NetworkInterface x, NetworkInterface y) => (int)(x.Speed - y.Speed);
+        public static int CompareNetworkInterfaceBySpeed(NetworkInterface x, NetworkInterface y)
+        {
+            return (int)(x?.Speed ?? 0 - y?.Speed ?? 0);
+        }
 
+        [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "<Pending>")]
         public static List<NetworkInterface> GetValidNetworkInterface()
         {
             List<NetworkInterface> adapterList = new List<NetworkInterface>();
@@ -22,7 +25,7 @@ namespace XTransmit.Utility
             {
                 networkInterfaces = NetworkInterface.GetAllNetworkInterfaces();
             }
-            catch (Exception)
+            catch
             {
                 networkInterfaces = null;
             }
@@ -50,7 +53,25 @@ namespace XTransmit.Utility
             return adapterList;
         }
 
-        public static List<int> GetPortInUse(int startingPort)
+        // set dns for current adapter
+        public static void SetDNS(string[] dns)
+        {
+            using (ManagementClass manClass = new ManagementClass("Win32_NetworkAdapterConfiguration"))
+            {
+                ManagementObjectCollection manObjC = manClass.GetInstances();
+                foreach (ManagementObject manObj in manObjC)
+                {
+                    if ((bool)manObj["IPEnabled"])
+                    {
+                        ManagementBaseObject inParams = manObj.GetMethodParameters("SetDNSServerSearchOrder");
+                        inParams["DNSServerSearchOrder"] = dns;
+                        ManagementBaseObject outParams = manObj.InvokeMethod("SetDNSServerSearchOrder", inParams, null);
+                    }
+                }
+            }
+        }
+
+        public static List<int> GetPortInUse(int startPort)
         {
             IPEndPoint[] endPoints;
             List<int> portList = new List<int>();
@@ -60,19 +81,19 @@ namespace XTransmit.Utility
             // getting active connections
             TcpConnectionInformation[] connections = properties.GetActiveTcpConnections();
             portList.AddRange(from n in connections
-                              where n.LocalEndPoint.Port >= startingPort
+                              where n.LocalEndPoint.Port >= startPort
                               select n.LocalEndPoint.Port);
 
             // getting active tcp listners - WCF service listening in tcp
             endPoints = properties.GetActiveTcpListeners();
             portList.AddRange(from n in endPoints
-                              where n.Port >= startingPort
+                              where n.Port >= startPort
                               select n.Port);
 
             // getting active udp listeners
             endPoints = properties.GetActiveUdpListeners();
             portList.AddRange(from n in endPoints
-                              where n.Port >= startingPort
+                              where n.Port >= startPort
                               select n.Port);
 
             portList.Sort();
@@ -85,17 +106,17 @@ namespace XTransmit.Utility
          * </summary>
          * <returns>The free port or 0 if it did not find a free port</returns>
          */
-        public static int GetAvailablePort(int startingPort, List<int> exceptPort = null)
+        public static int GetAvailablePort(int startPort, List<int> exceptPort = null)
         {
             if (exceptPort == null)
             {
-                exceptPort = GetPortInUse(startingPort);
+                exceptPort = GetPortInUse(startPort);
             }
 
             Random random = new Random();
-            for (int i = startingPort; i < ushort.MaxValue; i++) // random enough times
+            for (int i = startPort; i < ushort.MaxValue; i++) // random enough times
             {
-                int port = random.Next(startingPort, ushort.MaxValue);
+                int port = random.Next(startPort, ushort.MaxValue);
                 if (!exceptPort.Contains(port))
                 {
                     return port;

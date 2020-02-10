@@ -6,16 +6,18 @@ using XTransmit.ViewModel;
 
 namespace XTransmit.View
 {
-    /**
-     * Updated: 2019-08-02
-     */
     public partial class WindowCurlPlay : Window
     {
         public WindowCurlPlay(SiteProfile siteProfile, Action<SiteProfile> actionSaveProfile)
         {
+            if (siteProfile is null)
+            {
+                throw new ArgumentNullException(nameof(siteProfile));
+            }
+
             InitializeComponent();
 
-            Preference preference = App.GlobalPreference;
+            Preference preference = PreferenceManager.Global;
             Left = preference.WindowCurlRunner.X;
             Top = preference.WindowCurlRunner.Y;
             Width = preference.WindowCurlRunner.W;
@@ -28,7 +30,7 @@ namespace XTransmit.View
         private void WindowCurl_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             // Save window placement
-            Preference preference = App.GlobalPreference;
+            Preference preference = PreferenceManager.Global;
             preference.WindowCurlRunner.X = Left;
             preference.WindowCurlRunner.Y = Top;
             preference.WindowCurlRunner.W = Width;
